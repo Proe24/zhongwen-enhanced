@@ -6,79 +6,91 @@
 
 'use strict';
 
-function loadVals() {
+async function loadVals() {
+    let s = await zhongwenStorage.get();
 
-    const toneColors = localStorage['tonecolors'] || 'yes';
-    if (toneColors === 'no') {
+    if (s.tonecolors === 'no') {
         document.querySelector('#toneColorsNone').checked = true;
     } else {
-        const toneColorScheme = localStorage['toneColorScheme'] || 'standard';
-        document.querySelector(`input[name="toneColors"][value="${toneColorScheme}"]`).checked = true;
+        document.querySelector(`input[name="toneColors"][value="${s.toneColorScheme}"]`).checked = true;
     }
 
-    const simpTrad = localStorage['simpTrad'] || 'classic';
-    document.querySelector(`input[name="simpTrad"][value="${simpTrad}"]`).checked = true;
+    document.querySelector(`input[name="simpTrad"][value="${s.simpTrad}"]`).checked = true;
+    document.querySelector('#zhuyin').checked = s.zhuyin === 'yes';
+    document.querySelector('#grammar').checked = s.grammar !== 'no';
+    document.querySelector('#vocab').checked = s.vocab !== 'no';
+    document.querySelector(`input[name="saveToWordList"][value="${s.saveToWordList}"]`).checked = true;
+    document.querySelector(`input[name="skritterTLD"][value="${s.skritterTLD}"]`).checked = true;
+    document.querySelector(`input[name="direction"][value="${s.direction}"]`).checked = true;
+    document.querySelector(`input[name="mode"][value="${s.mode}"]`).checked = true;
+    document.querySelector(`input[name="density"][value="${s.density}"]`).checked = true;
+    document.querySelector(`input[name="hanziFont"][value="${s.hanziFont}"]`).checked = true;
 
-    const zhuyin = localStorage['zhuyin'] || 'no';
-    document.querySelector('#zhuyin').checked = zhuyin === 'yes';
+    let slider = document.getElementById('popupScale');
+    if (slider) {
+        slider.value = s.popupScale;
+        applyPopupScalePreview(s.popupScale);
+        applyPopupPreviewTheme(s);
+    }
 
-    const grammar = localStorage['grammar'] || 'yes';
-    document.querySelector('#grammar').checked = grammar !== 'no';
-
-    const vocab = localStorage['vocab'] || 'yes';
-    document.querySelector('#vocab').checked = vocab !== 'no';
-
-    const saveToWordList = localStorage['saveToWordList'] || 'allEntries';
-    document.querySelector(`input[name="saveToWordList"][value="${saveToWordList}"]`).checked = true;
-
-    const skritterTLD = localStorage['skritterTLD'] || 'com';
-    document.querySelector(`input[name="skritterTLD"][value="${skritterTLD}"]`).checked = true;
-
-    const direction = localStorage['direction'] || 'vellum';
-    document.querySelector(`input[name="direction"][value="${direction}"]`).checked = true;
-
-    const mode = localStorage['mode'] || 'light';
-    document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
-
-    const density = localStorage['density'] || 'regular';
-    document.querySelector(`input[name="density"][value="${density}"]`).checked = true;
-
-    const hanziFont = localStorage['hanziFont'] || 'serif';
-    document.querySelector(`input[name="hanziFont"][value="${hanziFont}"]`).checked = true;
-
-    applyThemeToPage();
+    applyThemeToPage(s);
 }
 
-function setToneColorScheme(toneColorScheme) {
-    if (toneColorScheme === 'none') {
-        setOption('tonecolors', 'no');
+function applyPopupScalePreview(scale) {
+    let preview = document.getElementById('popupPreview');
+    let label = document.getElementById('popupScaleValue');
+    if (preview) preview.style.zoom = scale;
+    if (label) label.textContent = Math.round(parseFloat(scale) * 100) + '%';
+}
+
+function applyPopupPreviewTheme(s) {
+    let preview = document.getElementById('popupPreview');
+    if (!preview) return;
+    preview.setAttribute('data-direction', s.direction || 'vellum');
+    preview.setAttribute('data-mode', s.mode || 'light');
+    preview.setAttribute('data-density', s.density || 'regular');
+    preview.setAttribute('data-hanzi-font', s.hanziFont || 'serif');
+    if (s.tonecolors === 'no') {
+        preview.setAttribute('data-tone-scheme', 'none');
+    } else if (s.toneColorScheme && s.toneColorScheme !== 'signature') {
+        preview.setAttribute('data-tone-scheme', s.toneColorScheme);
     } else {
-        setOption('tonecolors', 'yes');
-        setOption('toneColorScheme', toneColorScheme);
+        preview.removeAttribute('data-tone-scheme');
     }
 }
 
-function setOption(option, value) {
-    localStorage[option] = value;
-    chrome.extension.getBackgroundPage().zhongwenOptions[option] = value;
+async function setToneColorScheme(toneColorScheme) {
+    if (toneColorScheme === 'none') {
+        await setOption('tonecolors', 'no');
+    } else {
+        await setOption('tonecolors', 'yes');
+        await setOption('toneColorScheme', toneColorScheme);
+    }
+    let s = await zhongwenStorage.get(['direction', 'mode', 'density', 'hanziFont', 'tonecolors', 'toneColorScheme']);
+    applyPopupPreviewTheme(s);
+}
+
+async function setOption(option, value) {
+    await zhongwenStorage.set(option, value);
 }
 
 function setBooleanOption(option, value) {
-    let yesNo = value ? 'yes' : 'no';
-    setOption(option, yesNo);
+    return setOption(option, value ? 'yes' : 'no');
 }
 
-function applyThemeToPage() {
+function applyThemeToPage(s) {
     const html = document.documentElement;
-    html.setAttribute('data-direction', localStorage['direction'] || 'vellum');
-    html.setAttribute('data-mode', localStorage['mode'] || 'light');
-    html.setAttribute('data-density', localStorage['density'] || 'regular');
-    html.setAttribute('data-hanzi-font', localStorage['hanziFont'] || 'serif');
+    html.setAttribute('data-direction', s.direction);
+    html.setAttribute('data-mode', s.mode);
+    html.setAttribute('data-density', s.density);
+    html.setAttribute('data-hanzi-font', s.hanziFont);
 }
 
-function setThemeOption(option, value) {
-    setOption(option, value);
-    applyThemeToPage();
+async function setThemeOption(option, value) {
+    await setOption(option, value);
+    let s = await zhongwenStorage.get(['direction', 'mode', 'density', 'hanziFont', 'tonecolors', 'toneColorScheme']);
+    applyThemeToPage(s);
+    applyPopupPreviewTheme(s);
     if (option === 'direction') {
         chrome.runtime.sendMessage({ type: 'updateIcon' });
     }
@@ -134,6 +146,20 @@ window.addEventListener('load', () => {
         input.addEventListener('change',
             () => setThemeOption('hanziFont', input.getAttribute('value')));
     });
+
+    let scaleSlider = document.getElementById('popupScale');
+    let scaleReset = document.getElementById('popupScaleReset');
+    if (scaleSlider) {
+        scaleSlider.addEventListener('input', () => applyPopupScalePreview(scaleSlider.value));
+        scaleSlider.addEventListener('change', () => setOption('popupScale', scaleSlider.value));
+    }
+    if (scaleReset) {
+        scaleReset.addEventListener('click', () => {
+            scaleSlider.value = '1';
+            applyPopupScalePreview('1');
+            setOption('popupScale', '1');
+        });
+    }
 
     // AI provider + API keys
     let providerKeyMap = {
@@ -191,4 +217,3 @@ window.addEventListener('load', () => {
 });
 
 loadVals();
-

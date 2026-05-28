@@ -1053,6 +1053,8 @@ function showPopup(html, elem, x, y) {
     popup.setAttribute('data-mode', config.mode || 'light');
     popup.setAttribute('data-density', config.density || 'regular');
     popup.setAttribute('data-hanzi-font', config.hanziFont || 'serif');
+    let scale = parseFloat(config.popupScale);
+    popup.style.zoom = (!isNaN(scale) && scale > 0) ? scale : '';
 
     if (config.tonecolors === 'no') {
         popup.setAttribute('data-tone-scheme', 'none');
@@ -1245,10 +1247,18 @@ function findPreviousTextNode(root, previous) {
 }
 
 function copyToClipboard(data) {
-    chrome.runtime.sendMessage({
-        'type': 'copy',
-        'data': data
-    });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(data).catch(() => {});
+    } else {
+        let txt = document.createElement('textarea');
+        txt.style.position = 'absolute';
+        txt.style.left = '-100%';
+        txt.value = data;
+        document.body.appendChild(txt);
+        txt.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(txt);
+    }
 
     showPopup('<div class="cz-msg">Copied to clipboard</div>', null, -1, -1);
 }

@@ -72,6 +72,28 @@
     </div>
 
     <div class="form-group mb-4">
+        <label for="popupScale">Popup size <span id="popupScaleValue" style="color:var(--ink-faint);font-family:var(--font-mono);margin-left:8px"></span></label>
+        <div style="display:flex;align-items:center;gap:12px;max-width:480px">
+            <span style="font-size:11px;color:var(--ink-faint)">70%</span>
+            <input type="range" id="popupScale" min="0.7" max="1.6" step="0.05" value="1"
+                   style="flex:1">
+            <span style="font-size:11px;color:var(--ink-faint)">160%</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="popupScaleReset">Reset</button>
+        </div>
+        <div id="popupPreviewArea" style="margin-top:16px;padding:24px;background:var(--bg-page-2,#ebe1c6);border:1px dashed var(--rule,#d4cba6);border-radius:6px;display:flex;justify-content:center;min-height:140px;overflow:hidden">
+            <div id="popupPreview" class="cz-popup" style="position:relative;opacity:1;transform:none;pointer-events:auto">
+                <div class="entry">
+                    <div class="head">
+                        <div class="hanzi"><span class="tone3">你</span><span class="tone3">好</span></div>
+                        <div class="pinyin">nǐ hǎo</div>
+                    </div>
+                    <p class="def">hello; hi</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
         <label>Hanzi font style</label>
         <div class="custom-control custom-radio">
             <input type="radio" id="hanziFontSerif" name="hanziFont" class="custom-control-input"
@@ -245,6 +267,7 @@
         </div>
     </div>
 </div>
+<script src="js/storage.js" type="text/javascript"></script>
 <script src="js/options.js" type="text/javascript"></script>
 </body>
 </html>

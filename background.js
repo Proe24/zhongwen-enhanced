@@ -48,139 +48,76 @@
 
 import { ZhongwenDictionary } from './dict.js';
 
-let isEnabled = localStorage['enabled'] === '1';
-
-let isActivated = false;
-
-let tabIDs = {};
-
-let dict;
-
-let zhongwenOptions = window.zhongwenOptions = {
-    tonecolors: localStorage['tonecolors'] || 'yes',
-    skritterTLD: localStorage['skritterTLD'] || 'com',
-    zhuyin: localStorage['zhuyin'] || 'no',
-    grammar: localStorage['grammar'] || 'yes',
-    vocab: localStorage['vocab'] || 'yes',
-    simpTrad: localStorage['simpTrad'] || 'classic',
-    toneColorScheme: localStorage['toneColorScheme'] || 'standard',
-    direction: localStorage['direction'] || 'vellum',
-    mode: localStorage['mode'] || 'light',
-    density: localStorage['density'] || 'regular',
-    hanziFont: localStorage['hanziFont'] || 'serif'
+const OPTION_KEYS = [
+    'tonecolors', 'skritterTLD', 'zhuyin', 'grammar', 'vocab', 'simpTrad',
+    'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'popupScale'
+];
+const OPTION_DEFAULTS = {
+    tonecolors: 'yes', skritterTLD: 'com', zhuyin: 'no', grammar: 'yes',
+    vocab: 'yes', simpTrad: 'classic', toneColorScheme: 'standard',
+    direction: 'vellum', mode: 'light', density: 'regular', hanziFont: 'serif',
+    popupScale: '1'
 };
 
-function activateExtension(tabId, showHelp) {
+let isActivated = false;
+let tabIDs = {};
+let dict;
 
+function getStorage(keys) {
+    return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+}
+
+function setStorage(obj) {
+    return new Promise(resolve => chrome.storage.local.set(obj, resolve));
+}
+
+async function getOptions() {
+    let result = await getStorage(OPTION_KEYS);
+    let out = {};
+    OPTION_KEYS.forEach(k => { out[k] = result[k] !== undefined ? result[k] : OPTION_DEFAULTS[k]; });
+    return out;
+}
+
+async function activateExtension(tabId, showHelp) {
     isActivated = true;
-
-    isEnabled = true;
-    // values in localStorage are always strings
-    localStorage['enabled'] = '1';
+    await setStorage({ enabled: '1' });
 
     if (!dict) {
         loadDictionary().then(r => dict = r);
     }
 
-    chrome.tabs.sendMessage(tabId, {
-        'type': 'enable',
-        'config': zhongwenOptions
-    });
+    let options = await getOptions();
+
+    try {
+        await chrome.tabs.sendMessage(tabId, { type: 'enable', config: options });
+    } catch (e) { /* tab may not have content script (chrome:// etc.) */ }
 
     if (showHelp) {
-        chrome.tabs.sendMessage(tabId, {
-            'type': 'showHelp'
-        });
+        try {
+            await chrome.tabs.sendMessage(tabId, { type: 'showHelp' });
+        } catch (e) {}
     }
 
-    chrome.browserAction.setBadgeBackgroundColor({
-        'color': [255, 0, 0, 255]
-    });
+    chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
+    chrome.action.setBadgeText({ text: 'On' });
 
-    chrome.browserAction.setBadgeText({
-        'text': 'On'
-    });
-
-    chrome.contextMenus.create(
-        {
-            title: 'Open word list',
-            onclick: function () {
-                let url = '/wordlist.html';
-                let tabID = tabIDs['wordlist'];
-                if (tabID) {
-                    chrome.tabs.get(tabID, function (tab) {
-                        if (tab && tab.url && (tab.url.endsWith('wordlist.html'))) {
-                            chrome.tabs.update(tabID, {
-                                active: true
-                            });
-                        } else {
-                            chrome.tabs.create({
-                                url: url
-                            }, function (tab) {
-                                tabIDs['wordlist'] = tab.id;
-                            });
-                        }
-                    });
-                } else {
-                    chrome.tabs.create(
-                        { url: url },
-                        function (tab) {
-                            tabIDs['wordlist'] = tab.id;
-                        }
-                    );
-                }
-            }
-        }
-    );
-    chrome.contextMenus.create(
-        {
-            title: 'Show help in new tab',
-            onclick: function () {
-                let url = '/help.html';
-                let tabID = tabIDs['help'];
-                if (tabID) {
-                    chrome.tabs.get(tabID, function (tab) {
-                        if (tab && (tab.url.endsWith('help.html'))) {
-                            chrome.tabs.update(tabID, {
-                                active: true
-                            });
-                        } else {
-                            chrome.tabs.create({
-                                url: url
-                            }, function (tab) {
-                                tabIDs['help'] = tab.id;
-                            });
-                        }
-                    });
-                } else {
-                    chrome.tabs.create(
-                        { url: url },
-                        function (tab) {
-                            tabIDs['help'] = tab.id;
-                        }
-                    );
-                }
-            }
-        }
-    );
-    chrome.contextMenus.create(
-        {
-            title: 'Zhongwen: Break down sentence',
-            contexts: ['selection'],
-            onclick: function (info, tab) {
-                chrome.tabs.sendMessage(tab.id, {
-                    type: 'breakdown-selection',
-                    text: info.selectionText
-                });
-            }
-        }
-    );
-
-    updateIcon();
+    await rebuildContextMenus();
+    await updateIcon();
 }
 
-function updateIcon() {
-    let direction = localStorage['direction'] || 'vellum';
+async function rebuildContextMenus() {
+    await new Promise(resolve => chrome.contextMenus.removeAll(resolve));
+    chrome.contextMenus.create({ id: 'open-wordlist', title: 'Open word list', contexts: ['all'] });
+    chrome.contextMenus.create({ id: 'show-help', title: 'Show help in new tab', contexts: ['all'] });
+    chrome.contextMenus.create({
+        id: 'breakdown-selection',
+        title: 'Zhongwen: Break down sentence',
+        contexts: ['selection']
+    });
+}
+
+async function updateIcon() {
+    let { direction = 'vellum' } = await getStorage('direction');
     let accents = { vellum: '#8a3324', slate: '#1c4670', crimson: '#b3271f' };
     let textColors = { vellum: '#fbf4df', slate: '#ffffff', crimson: '#fbf6e3' };
     let radii = { vellum: 4, slate: 2, crimson: 1 };
@@ -190,9 +127,7 @@ function updateIcon() {
     let imageData = {};
 
     [16, 48].forEach(function (size) {
-        let canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
+        let canvas = new OffscreenCanvas(size, size);
         let ctx = canvas.getContext('2d');
         let r = Math.round(baseRad * size / 48);
 
@@ -219,113 +154,82 @@ function updateIcon() {
         imageData[String(size)] = ctx.getImageData(0, 0, size, size);
     });
 
-    chrome.browserAction.setIcon({ imageData: imageData });
+    chrome.action.setIcon({ imageData: imageData });
 }
 
 async function loadDictData() {
-    let wordDict = fetch(chrome.runtime.getURL(
-        "data/cedict_ts.u8")).then(r => r.text());
-    let wordIndex = fetch(chrome.runtime.getURL(
-        "data/cedict.idx")).then(r => r.text());
-    let grammarKeywords = fetch(chrome.runtime.getURL(
-        "data/grammarKeywordsMin.json")).then(r => r.json());
-    let vocabKeywords = fetch(chrome.runtime.getURL(
-        "data/vocabularyKeywordsMin.json")).then(r => r.json());
-
+    let wordDict = fetch(chrome.runtime.getURL("data/cedict_ts.u8")).then(r => r.text());
+    let wordIndex = fetch(chrome.runtime.getURL("data/cedict.idx")).then(r => r.text());
+    let grammarKeywords = fetch(chrome.runtime.getURL("data/grammarKeywordsMin.json")).then(r => r.json());
+    let vocabKeywords = fetch(chrome.runtime.getURL("data/vocabularyKeywordsMin.json")).then(r => r.json());
     return Promise.all([wordDict, wordIndex, grammarKeywords, vocabKeywords]);
 }
-
 
 async function loadDictionary() {
     let [wordDict, wordIndex, grammarKeywords, vocabKeywords] = await loadDictData();
     return new ZhongwenDictionary(wordDict, wordIndex, grammarKeywords, vocabKeywords);
 }
 
-function deactivateExtension() {
-
+async function deactivateExtension() {
     isActivated = false;
-
-    isEnabled = false;
-    // values in localStorage are always strings
-    localStorage['enabled'] = '0';
-
+    await setStorage({ enabled: '0' });
     dict = undefined;
 
-    chrome.browserAction.setBadgeBackgroundColor({
-        'color': [0, 0, 0, 0]
-    });
+    chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
+    chrome.action.setBadgeText({ text: '' });
 
-    chrome.browserAction.setBadgeText({
-        'text': ''
-    });
-
-    // Send a disable message to all tabs in all windows.
-    chrome.windows.getAll(
-        { 'populate': true },
-        function (windows) {
-            for (let i = 0; i < windows.length; ++i) {
-                let tabs = windows[i].tabs;
-                for (let j = 0; j < tabs.length; ++j) {
-                    chrome.tabs.sendMessage(tabs[j].id, {
-                        'type': 'disable'
-                    });
-                }
+    chrome.windows.getAll({ populate: true }, function (windows) {
+        for (let i = 0; i < windows.length; ++i) {
+            let tabs = windows[i].tabs;
+            for (let j = 0; j < tabs.length; ++j) {
+                chrome.tabs.sendMessage(tabs[j].id, { type: 'disable' }).catch(() => {});
             }
         }
-    );
+    });
 
     chrome.contextMenus.removeAll();
 }
 
-function activateExtensionToggle(currentTab) {
+async function activateExtensionToggle(currentTab) {
     if (isActivated) {
-        deactivateExtension();
+        await deactivateExtension();
     } else {
-        activateExtension(currentTab.id, true);
+        await activateExtension(currentTab.id, true);
     }
 }
 
-function enableTab(tabId) {
-    if (isEnabled) {
+async function enableTab(tabId) {
+    let { enabled } = await getStorage('enabled');
+    if (enabled !== '1') return;
 
-        if (!isActivated) {
-            activateExtension(tabId, false);
-        }
-
-        chrome.tabs.sendMessage(tabId, {
-            'type': 'enable',
-            'config': zhongwenOptions
-        });
-    }
-}
-
-function search(text) {
-
-    if (!dict) {
-        // dictionary not loaded
+    if (!isActivated) {
+        await activateExtension(tabId, false);
         return;
     }
 
-    let entry = dict.wordSearch(text);
+    let options = await getOptions();
+    chrome.tabs.sendMessage(tabId, { type: 'enable', config: options }).catch(() => {});
+}
 
+function search(text) {
+    if (!dict) return;
+
+    let entry = dict.wordSearch(text);
     if (entry) {
         for (let i = 0; i < entry.data.length; i++) {
             let word = entry.data[i][1];
             if (dict.hasGrammarKeyword(word) && (entry.matchLen === word.length)) {
-                // the final index should be the last one with the maximum length
                 entry.grammar = { keyword: word, index: i };
             }
             if (dict.hasVocabKeyword(word) && (entry.matchLen === word.length)) {
-                // the final index should be the last one with the maximum length
                 entry.vocab = { keyword: word, index: i };
             }
         }
     }
-
     return entry;
 }
 
-chrome.browserAction.onClicked.addListener(activateExtensionToggle);
+chrome.action.onClicked.addListener(activateExtensionToggle);
 
 chrome.tabs.onActivated.addListener(activeInfo => {
     if (activeInfo.tabId === tabIDs['wordlist']) {
@@ -339,6 +243,34 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
         enableTab(tabId);
     }
 });
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === 'open-wordlist') {
+        openInternalTab('/wordlist.html', 'wordlist');
+    } else if (info.menuItemId === 'show-help') {
+        openInternalTab('/help.html', 'help');
+    } else if (info.menuItemId === 'breakdown-selection' && tab) {
+        chrome.tabs.sendMessage(tab.id, {
+            type: 'breakdown-selection',
+            text: info.selectionText
+        }).catch(() => {});
+    }
+});
+
+function openInternalTab(url, tabType) {
+    let tabID = tabIDs[tabType];
+    if (tabID) {
+        chrome.tabs.get(tabID, function (tab) {
+            if (!chrome.runtime.lastError && tab && tab.url && tab.url.endsWith(url.replace(/^\//, ''))) {
+                chrome.tabs.update(tabID, { active: true });
+            } else {
+                createTab(url, tabType);
+            }
+        });
+    } else {
+        createTab(url, tabType);
+    }
+}
 
 function createTab(url, tabType) {
     chrome.tabs.create({ url }, tab => {
@@ -430,14 +362,9 @@ function extractText(provider, data) {
 function handleBreakdown(request, callback) {
     let sentence = request.sentence || '';
 
-    // Check cache first
     let cached = cacheGet(sentence);
-    if (cached) {
-        callback(cached);
-        return;
-    }
+    if (cached) { callback(cached); return; }
 
-    // Deduplicate: skip if same sentence is already in flight
     if (inflightSentence === sentence) {
         callback({ error: 'Request already in progress for this sentence.' });
         return;
@@ -458,7 +385,6 @@ function handleBreakdown(request, callback) {
                 return;
             }
 
-            // Rate limit: wait if too soon after last request
             let now = Date.now();
             let wait = Math.max(0, MIN_REQUEST_GAP - (now - lastRequestTime));
 
@@ -501,6 +427,34 @@ function handleBreakdown(request, callback) {
     );
 }
 
+async function handleAdd(request) {
+    let { wordlist: json, saveToWordList } = await getStorage(['wordlist', 'saveToWordList']);
+    let saveFirstEntryOnly = saveToWordList === 'firstEntryOnly';
+
+    let wordlist = json ? JSON.parse(json) : [];
+    let listName = request.list || '';
+
+    for (let i in request.entries) {
+        let src = request.entries[i];
+        let entry = {};
+        entry.timestamp = Date.now();
+        entry.simplified = src.simplified;
+        entry.traditional = src.traditional;
+        entry.pinyin = src.pinyin;
+        entry.definition = src.definition;
+        if (src.isSentence) entry.isSentence = true;
+        if (src.notes) entry.notes = src.notes;
+        if (src.box) entry.box = src.box;
+        if (src.breakdown) entry.breakdown = src.breakdown;
+        if (listName) entry.list = listName;
+
+        wordlist.push(entry);
+
+        if (saveFirstEntryOnly) break;
+    }
+    await setStorage({ wordlist: JSON.stringify(wordlist) });
+}
+
 chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 
     let tabID;
@@ -509,7 +463,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 
         case 'search': {
             let response = search(request.text);
-            response.originalText = request.originalText;
+            if (response) response.originalText = request.originalText;
             callback(response);
         }
             break;
@@ -519,7 +473,6 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
             if (tabID) {
                 chrome.tabs.get(tabID, () => {
                     if (!chrome.runtime.lastError) {
-                        // activate existing tab
                         chrome.tabs.update(tabID, { active: true, url: request.url });
                     } else {
                         createTab(request.url, request.tabType);
@@ -535,56 +488,8 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
             updateIcon();
             break;
 
-        case 'copy': {
-            let txt = document.createElement('textarea');
-            txt.style.position = "absolute";
-            txt.style.left = "-100%";
-            txt.value = request.data;
-            document.body.appendChild(txt);
-            txt.select();
-            document.execCommand('copy');
-            document.body.removeChild(txt);
-        }
-            break;
-
         case 'add': {
-            let json = localStorage['wordlist'];
-
-            let saveFirstEntryOnly = localStorage['saveToWordList'] === 'firstEntryOnly';
-
-            let wordlist;
-            if (json) {
-                wordlist = JSON.parse(json);
-            } else {
-                wordlist = [];
-            }
-
-            let listName = request.list || '';
-
-            for (let i in request.entries) {
-
-                let src = request.entries[i];
-                let entry = {};
-                entry.timestamp = Date.now();
-                entry.simplified = src.simplified;
-                entry.traditional = src.traditional;
-                entry.pinyin = src.pinyin;
-                entry.definition = src.definition;
-                if (src.isSentence) entry.isSentence = true;
-                if (src.notes) entry.notes = src.notes;
-                if (src.box) entry.box = src.box;
-                if (src.breakdown) entry.breakdown = src.breakdown;
-                if (listName) entry.list = listName;
-
-                wordlist.push(entry);
-
-                if (saveFirstEntryOnly) {
-                    break;
-                }
-            }
-            localStorage['wordlist'] = JSON.stringify(wordlist);
-
-            tabID = tabIDs['wordlist'];
+            handleAdd(request);
         }
             break;
 
@@ -594,3 +499,17 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
         }
     }
 });
+
+// On service-worker startup, restore activation state from storage so the
+// badge and dictionary come back when the worker wakes from idle.
+(async function init() {
+    let { enabled } = await getStorage('enabled');
+    if (enabled === '1') {
+        isActivated = true;
+        loadDictionary().then(r => dict = r);
+        chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
+        chrome.action.setBadgeText({ text: 'On' });
+        await rebuildContextMenus();
+        await updateIcon();
+    }
+})();

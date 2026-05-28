@@ -19,8 +19,12 @@ let cardIdx = 0;
 let flipped = false;
 let reviewedCount = 0;
 
-function loadEntries() {
-    let json = localStorage['wordlist'];
+let showTradPref = false;
+
+async function loadEntries() {
+    let s = await zhongwenStorage.get(['wordlist', 'simpTrad']);
+    showTradPref = s.simpTrad === 'classic';
+    let json = s.wordlist;
     if (json) {
         entries = JSON.parse(json);
         entries.forEach(e => {
@@ -39,7 +43,7 @@ function saveEntries() {
         if (!copy.notes) delete copy.notes;
         return copy;
     });
-    localStorage['wordlist'] = JSON.stringify(toSave);
+    zhongwenStorage.set('wordlist', JSON.stringify(toSave));
 }
 
 function toneFromMark(syllable) {
@@ -153,7 +157,7 @@ function renderTable() {
     let tbody = document.getElementById('wordsBody');
     tbody.innerHTML = '';
 
-    let showTrad = localStorage['simpTrad'] === 'classic';
+    let showTrad = showTradPref;
     let visible = getVisibleEntries();
 
     visible.forEach(([e, i]) => {
@@ -606,8 +610,8 @@ function setMode(mode) {
     if (mode === 'study') renderStudy();
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    loadEntries();
+document.addEventListener('DOMContentLoaded', async function () {
+    await loadEntries();
     renderTable();
     setMode('manage');
 
