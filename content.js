@@ -1054,7 +1054,8 @@ function showPopup(html, elem, x, y) {
     popup.setAttribute('data-density', config.density || 'regular');
     popup.setAttribute('data-hanzi-font', config.hanziFont || 'serif');
     let scale = parseFloat(config.popupScale);
-    popup.style.zoom = (!isNaN(scale) && scale > 0) ? scale : '';
+    if (isNaN(scale) || scale <= 0) scale = 1;
+    popup.style.zoom = scale !== 1 ? scale : '';
 
     if (config.tonecolors === 'no') {
         popup.setAttribute('data-tone-scheme', 'none');
@@ -1109,8 +1110,8 @@ function showPopup(html, elem, x, y) {
     }
 
     if (x !== -1 && y !== -1) {
-        popup.style.left = x + 'px';
-        popup.style.top = y + 'px';
+        popup.style.left = (x / scale) + 'px';
+        popup.style.top = (y / scale) + 'px';
     }
     popup.style.display = '';
     popup.offsetHeight;
