@@ -386,7 +386,7 @@ function callProvider(provider, apiKey, prompt) {
             })
         });
     } else if (provider === 'gemini') {
-        let url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(apiKey);
+        let url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey);
         return fetch(url, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
