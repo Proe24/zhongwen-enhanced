@@ -10,10 +10,15 @@
 ---
 
 
-[![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/kkmlkkjojmombglmlpbpapmhcaljjkde)](https://chrome.google.com/webstore/detail/zhongwen-chinese-english/kkmlkkjojmombglmlpbpapmhcaljjkde)
-[![Chrome Users](https://img.shields.io/chrome-web-store/users/kkmlkkjojmombglmlpbpapmhcaljjkde?label=chrome%20users)](https://chrome.google.com/webstore/detail/zhongwen-chinese-english/kkmlkkjojmombglmlpbpapmhcaljjkde)
-[![Mozilla Add-on Version](https://img.shields.io/amo/v/zhongwen)](https://addons.mozilla.org/en-US/firefox/addon/zhongwen/)
-[![Firefox Users](https://img.shields.io/amo/users/zhongwen?label=firefox%20users)](https://addons.mozilla.org/en-US/firefox/addon/zhongwen/)
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
+
+<!-- TODO: after the Chrome Web Store listing is approved, add a version/users
+     badge using THIS fork's extension ID, e.g.:
+     [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/<YOUR_EXTENSION_ID>)](https://chromewebstore.google.com/detail/<YOUR_EXTENSION_ID>) -->
+
+> **Note:** The badges/links that previously appeared here pointed to the
+> *original* Zhongwen extension, not this fork. They have been removed to
+> avoid confusion and will be replaced once this fork is published.
 
 ## A Chinese Pop-Up Dictionary and Learning Tool
 
@@ -21,8 +26,8 @@ This browser extension allows you to translate Chinese characters and words
 by simply hovering over them with the mouse.  
 It also contains useful features for learners of the Chinese language.
 
-[![Chrome](https://developer.chrome.com/static/docs/webstore/branding/image/UV4C4ybeBTsZt43U4xis.png)](https://chrome.google.com/extensions/detail/kkmlkkjojmombglmlpbpapmhcaljjkde)
-[![Firefox](https://blog.mozilla.org/addons/files/2015/11/get-the-addon.png)](https://addons.mozilla.org/en-US/firefox/addon/zhongwen)
+<!-- TODO: add the "Add to Chrome" store button here once this fork is approved. -->
+
 
 
 ## Highlights
@@ -51,17 +56,21 @@ It also contains useful features for learners of the Chinese language.
 ## Installation
 
 ### Chrome
-The Zhongwen Chrome extension is available via the Chrome Web Store:  
-https://chrome.google.com/extensions/detail/kkmlkkjojmombglmlpbpapmhcaljjkde
+Zhongwen Enhanced is not yet on the Chrome Web Store — a listing is in
+preparation. <!-- TODO: replace with the store URL once approved. -->
 
-Simply click on the "Add to Chrome" button to start the installation.
+In the meantime you can install it from source:
 
+1. Download or clone this repository.
+2. Open `chrome://extensions` and enable **Developer mode** (top-right).
+3. Click **Load unpacked** and select this project folder.
+
+(Alternatively, run `build.ps1` to produce a packaged ZIP under `dist/`.)
 
 ### Firefox
-The Zhongwen Firefox extension is available via the Firefox Add-Ons site:  
+This fork targets Chrome (Manifest V3) and is not published for Firefox.
+The *original* Zhongwen is available for Firefox here:
 https://addons.mozilla.org/en-US/firefox/addon/zhongwen
-
-Simply click on the "Add to Firefox" button to start the installation.
 
 
 ## How Does It Work?
