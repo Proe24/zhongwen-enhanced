@@ -57,15 +57,17 @@ let tabIDs = {};
 let dict;
 
 let zhongwenOptions = window.zhongwenOptions = {
-    css: localStorage['popupcolor'] || 'yellow',
     tonecolors: localStorage['tonecolors'] || 'yes',
-    fontSize: localStorage['fontSize'] || 'small',
     skritterTLD: localStorage['skritterTLD'] || 'com',
     zhuyin: localStorage['zhuyin'] || 'no',
     grammar: localStorage['grammar'] || 'yes',
     vocab: localStorage['vocab'] || 'yes',
     simpTrad: localStorage['simpTrad'] || 'classic',
-    toneColorScheme: localStorage['toneColorScheme'] || 'standard'
+    toneColorScheme: localStorage['toneColorScheme'] || 'standard',
+    direction: localStorage['direction'] || 'vellum',
+    mode: localStorage['mode'] || 'light',
+    density: localStorage['density'] || 'regular',
+    hanziFont: localStorage['hanziFont'] || 'serif'
 };
 
 function activateExtension(tabId, showHelp) {
@@ -161,6 +163,63 @@ function activateExtension(tabId, showHelp) {
             }
         }
     );
+    chrome.contextMenus.create(
+        {
+            title: 'Zhongwen: Break down sentence',
+            contexts: ['selection'],
+            onclick: function (info, tab) {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: 'breakdown-selection',
+                    text: info.selectionText
+                });
+            }
+        }
+    );
+
+    updateIcon();
+}
+
+function updateIcon() {
+    let direction = localStorage['direction'] || 'vellum';
+    let accents = { vellum: '#8a3324', slate: '#1c4670', crimson: '#b3271f' };
+    let textColors = { vellum: '#fbf4df', slate: '#ffffff', crimson: '#fbf6e3' };
+    let radii = { vellum: 4, slate: 2, crimson: 1 };
+    let accent = accents[direction];
+    let textColor = textColors[direction];
+    let baseRad = radii[direction];
+    let imageData = {};
+
+    [16, 48].forEach(function (size) {
+        let canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        let ctx = canvas.getContext('2d');
+        let r = Math.round(baseRad * size / 48);
+
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(size - r, 0);
+        ctx.quadraticCurveTo(size, 0, size, r);
+        ctx.lineTo(size, size - r);
+        ctx.quadraticCurveTo(size, size, size - r, size);
+        ctx.lineTo(r, size);
+        ctx.quadraticCurveTo(0, size, 0, size - r);
+        ctx.lineTo(0, r);
+        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.fillStyle = accent;
+        ctx.fill();
+
+        ctx.fillStyle = textColor;
+        ctx.font = 'bold ' + Math.round(size * 0.6) + 'px "Noto Serif SC", "SimSun", "Songti SC", serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('中', size / 2, size / 2 + Math.round(size * 0.04));
+
+        imageData[String(size)] = ctx.getImageData(0, 0, size, size);
+    });
+
+    chrome.browserAction.setIcon({ imageData: imageData });
 }
 
 async function loadDictData() {
@@ -287,6 +346,161 @@ function createTab(url, tabType) {
     });
 }
 
+// ── Sentence Breakdown: cache, rate limit, retry ─────────────────────
+
+let breakdownCache = {};
+let breakdownCacheKeys = [];
+const CACHE_MAX = 50;
+let lastRequestTime = 0;
+const MIN_REQUEST_GAP = 2000;
+let inflightSentence = null;
+
+function cacheGet(sentence) {
+    return breakdownCache[sentence] || null;
+}
+
+function cachePut(sentence, response) {
+    if (breakdownCache[sentence]) return;
+    breakdownCache[sentence] = response;
+    breakdownCacheKeys.push(sentence);
+    if (breakdownCacheKeys.length > CACHE_MAX) {
+        let old = breakdownCacheKeys.shift();
+        delete breakdownCache[old];
+    }
+}
+
+function callProvider(provider, apiKey, prompt) {
+    if (provider === 'anthropic') {
+        return fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true',
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 2048,
+                messages: [{ role: 'user', content: prompt }]
+            })
+        });
+    } else if (provider === 'gemini') {
+        let url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(apiKey);
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048 }
+            })
+        });
+    } else if (provider === 'openai') {
+        return fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + apiKey,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                max_tokens: 2048,
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            })
+        });
+    }
+    return Promise.reject(new Error('Unknown provider: ' + provider));
+}
+
+function extractText(provider, data) {
+    if (provider === 'anthropic') {
+        return data.content && data.content[0] && data.content[0].text || '';
+    } else if (provider === 'gemini') {
+        return data.candidates && data.candidates[0] &&
+            data.candidates[0].content && data.candidates[0].content.parts &&
+            data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text || '';
+    } else if (provider === 'openai') {
+        return data.choices && data.choices[0] &&
+            data.choices[0].message && data.choices[0].message.content || '';
+    }
+    return '';
+}
+
+function handleBreakdown(request, callback) {
+    let sentence = request.sentence || '';
+
+    // Check cache first
+    let cached = cacheGet(sentence);
+    if (cached) {
+        callback(cached);
+        return;
+    }
+
+    // Deduplicate: skip if same sentence is already in flight
+    if (inflightSentence === sentence) {
+        callback({ error: 'Request already in progress for this sentence.' });
+        return;
+    }
+
+    chrome.storage.local.get(
+        ['aiProvider', 'anthropicApiKey', 'geminiApiKey', 'openaiApiKey'],
+        function (result) {
+            let provider = result.aiProvider || 'gemini';
+            let keyMap = {
+                anthropic: result.anthropicApiKey,
+                gemini: result.geminiApiKey,
+                openai: result.openaiApiKey
+            };
+            let apiKey = keyMap[provider];
+            if (!apiKey) {
+                callback({ error: 'No API key set for ' + provider + '. Open Zhongwen Options to add one.' });
+                return;
+            }
+
+            // Rate limit: wait if too soon after last request
+            let now = Date.now();
+            let wait = Math.max(0, MIN_REQUEST_GAP - (now - lastRequestTime));
+
+            inflightSentence = sentence;
+
+            setTimeout(function () {
+                lastRequestTime = Date.now();
+
+                function doFetch(retryCount) {
+                    callProvider(provider, apiKey, request.prompt)
+                        .then(r => {
+                            if (r.status === 429 && retryCount < 1) {
+                                let retryAfter = 5000;
+                                let ra = r.headers.get('retry-after');
+                                if (ra) retryAfter = Math.min(parseInt(ra, 10) * 1000 || 5000, 30000);
+                                return new Promise(resolve => setTimeout(resolve, retryAfter))
+                                    .then(() => doFetch(retryCount + 1));
+                            }
+                            if (!r.ok) return r.text().then(t => { throw new Error('API ' + r.status + ': ' + t); });
+                            return r.json();
+                        })
+                        .then(data => {
+                            if (!data) return;
+                            let text = extractText(provider, data);
+                            let providerNames = { anthropic: 'Claude', gemini: 'Gemini', openai: 'ChatGPT' };
+                            let response = { text: text, provider: providerNames[provider] || provider };
+                            cachePut(sentence, response);
+                            inflightSentence = null;
+                            callback(response);
+                        })
+                        .catch(err => {
+                            inflightSentence = null;
+                            callback({ error: err.message || 'Unknown error' });
+                        });
+                }
+
+                doFetch(0);
+            }, wait);
+        }
+    );
+}
+
 chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 
     let tabID;
@@ -317,6 +531,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
         }
             break;
 
+        case 'updateIcon':
+            updateIcon();
+            break;
+
         case 'copy': {
             let txt = document.createElement('textarea');
             txt.style.position = "absolute";
@@ -341,14 +559,22 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
                 wordlist = [];
             }
 
+            let listName = request.list || '';
+
             for (let i in request.entries) {
 
+                let src = request.entries[i];
                 let entry = {};
                 entry.timestamp = Date.now();
-                entry.simplified = request.entries[i].simplified;
-                entry.traditional = request.entries[i].traditional;
-                entry.pinyin = request.entries[i].pinyin;
-                entry.definition = request.entries[i].definition;
+                entry.simplified = src.simplified;
+                entry.traditional = src.traditional;
+                entry.pinyin = src.pinyin;
+                entry.definition = src.definition;
+                if (src.isSentence) entry.isSentence = true;
+                if (src.notes) entry.notes = src.notes;
+                if (src.box) entry.box = src.box;
+                if (src.breakdown) entry.breakdown = src.breakdown;
+                if (listName) entry.list = listName;
 
                 wordlist.push(entry);
 
@@ -361,5 +587,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
             tabID = tabIDs['wordlist'];
         }
             break;
+
+        case 'breakdown': {
+            handleBreakdown(request, callback);
+            return true;
+        }
     }
 });

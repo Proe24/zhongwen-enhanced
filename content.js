@@ -97,7 +97,447 @@ function disableTab() {
         popup.parentNode.removeChild(popup);
     }
 
+    let panel = document.getElementById('zhongwen-panel');
+    if (panel) {
+        panel.parentNode.removeChild(panel);
+        panelOpen = false;
+    }
+
     clearHighlight();
+}
+
+// ── Sentence Breakdown Panel ─────────────────────────────────────────
+
+let panelOpen = false;
+
+function getSurroundingSentence() {
+    if (!savedRangeNode || !savedRangeNode.textContent) return '';
+    let block = savedRangeNode.nodeType === 3 ? savedRangeNode.parentNode : savedRangeNode;
+    while (block && block !== document.body) {
+        let display = window.getComputedStyle(block).display;
+        if (display === 'block' || display === 'flex' || display === 'list-item' ||
+            display === 'table-cell' || block.tagName === 'P' || block.tagName === 'DIV' ||
+            block.tagName === 'LI' || block.tagName === 'TD' || block.tagName === 'H1' ||
+            block.tagName === 'H2' || block.tagName === 'H3' || block.tagName === 'H4') break;
+        block = block.parentNode;
+    }
+    if (!block || block === document.body) block = savedRangeNode.parentNode;
+
+    let text = block.textContent;
+    let cursorOffset = 0;
+    let walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walker.nextNode())) {
+        if (node === savedRangeNode) {
+            cursorOffset += savedRangeOffset;
+            break;
+        }
+        cursorOffset += node.textContent.length;
+    }
+
+    let offset = Math.min(cursorOffset, text.length);
+    let sentenceEnders = /[。！？\n\r]/;
+    let start = offset;
+    while (start > 0 && !sentenceEnders.test(text[start - 1])) start--;
+    let end = offset;
+    while (end < text.length && !sentenceEnders.test(text[end])) end++;
+    return text.substring(start, end).trim();
+}
+
+function buildBreakdownPrompt(text) {
+    let sentenceShape =
+        '{ "hz": "<hanzi token>", "py": "pinyin with tone numbers like zhong1 guo2", "gloss": "short English", "role": "subject|verb|object|particle|adverb|conjunction|preposition|measure|topic|complement|aspect|other" }';
+    let breakdownShape =
+        '{\n' +
+        '  "literal": "word-by-word literal English (clunky but transparent)",\n' +
+        '  "idiomatic": "natural fluent English translation",\n' +
+        '  "grammar": [\n    "One concise grammar/usage note. Wrap key Chinese terms in **bold**."\n  ],\n' +
+        '  "words": [\n    ' + sentenceShape + '\n  ]\n' +
+        '}';
+
+    let prompt = 'You are a precise Chinese language tutor. Analyze this sentence: "' + text + '"\n\n' +
+        'Respond with ONLY a JSON object (no markdown fences, no prose):\n\n' + breakdownShape;
+
+    prompt += '\n\nRules:\n' +
+        '- Split into the natural word units a learner would look up (not single characters unless they stand alone).\n' +
+        '- Use tone-number pinyin: e.g. "zhong1 guo2", "de5" for neutral tone.\n' +
+        '- 2-4 grammar notes per sentence max. Keep them learner-facing, not academic.\n' +
+        '- No trailing commas. Valid JSON only.';
+    return prompt;
+}
+
+function createPanel() {
+    let panel = document.getElementById('zhongwen-panel');
+    if (panel) return panel;
+    panel = document.createElement('aside');
+    panel.id = 'zhongwen-panel';
+    panel.className = 'cz-side';
+    panel.setAttribute('data-direction', config.direction || 'vellum');
+    panel.setAttribute('data-mode', config.mode || 'light');
+    panel.innerHTML =
+        '<header>' +
+            '<span class="title">Sentence Breakdown</span>' +
+            '<button class="close" id="zhongwen-panel-close">&times;</button>' +
+        '</header>' +
+        '<div class="scroll" id="zhongwen-panel-scroll"></div>';
+    document.documentElement.appendChild(panel);
+    document.getElementById('zhongwen-panel-close').addEventListener('click', closePanel);
+    return panel;
+}
+
+let lastPanelSentence = '';
+
+function openPanel(sentence) {
+    if (!sentence) return;
+    if (panelOpen && sentence === lastPanelSentence) return;
+    lastPanelSentence = sentence;
+    let panel = createPanel();
+    panel.setAttribute('data-direction', config.direction || 'vellum');
+    panel.setAttribute('data-mode', config.mode || 'light');
+    let scroll = document.getElementById('zhongwen-panel-scroll');
+
+    scroll.innerHTML =
+        '<div class="src-sentence">' + sentence + '</div>' +
+        '<div class="ai-status" id="zhongwen-panel-status">' +
+            '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
+            '<span>Analyzing sentence…</span>' +
+        '</div>';
+
+    chrome.storage.local.get('aiProvider', function (result) {
+        let names = { anthropic: 'Claude', gemini: 'Gemini', openai: 'ChatGPT' };
+        let name = names[result.aiProvider] || 'AI';
+        let el = document.getElementById('zhongwen-panel-status');
+        if (el) el.innerHTML =
+            '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
+            '<span>Asking ' + name + ' to break down sentence…</span>';
+    });
+
+    panelOpen = true;
+    requestAnimationFrame(function () {
+        panel.classList.add('is-open');
+    });
+
+    chrome.runtime.sendMessage({
+        type: 'breakdown',
+        sentence: sentence,
+        prompt: buildBreakdownPrompt(sentence)
+    }, function (response) {
+        if (!panelOpen) return;
+        if (!response || response.error) {
+            let errMsg = (response && response.error) || 'Unknown error';
+            let providerLabel = (response && response.provider) || 'the AI provider';
+            let friendly = 'Something went wrong.';
+            if (errMsg.indexOf('No API key') >= 0) {
+                friendly = errMsg;
+            } else if (errMsg.indexOf('401') >= 0 || errMsg.indexOf('authentication') >= 0) {
+                friendly = 'Authentication failed — check your API key in Zhongwen Options.';
+            } else if (errMsg.indexOf('429') >= 0 || errMsg.indexOf('quota') >= 0 || errMsg.indexOf('RESOURCE_EXHAUSTED') >= 0) {
+                friendly = 'Rate limit reached — wait a minute and try again, or switch providers in Options.';
+            } else if (errMsg.indexOf('403') >= 0) {
+                friendly = 'Access denied — your API key may not have the right permissions.';
+            } else {
+                friendly = errMsg.length > 200 ? errMsg.substring(0, 200) + '…' : errMsg;
+            }
+            scroll.innerHTML =
+                '<div class="src-sentence">' + sentence + '</div>' +
+                '<div class="grammar-notes" style="border-left-color:var(--tone-1)">' +
+                    '<strong>Could not reach ' + providerLabel + '.</strong>' +
+                    '<p style="margin:6px 0 0;font-size:13px">' + friendly + '</p>' +
+                '</div>';
+            return;
+        }
+        let providerName = response.provider || 'AI';
+        let data = parseAIResponse(response.text);
+        if (data) {
+            renderBreakdown(scroll, sentence, data, providerName);
+        } else {
+            renderRawFallback(scroll, sentence, response.text, providerName);
+        }
+    });
+}
+
+function renderBreakdown(scroll, sentence, data, providerName) {
+    let html = '';
+    html += '<div class="src-sentence">' + sentence + '</div>';
+
+    html += '<div class="translation-grid">';
+    html += '<div class="trans-card idiomatic"><div class="label">Idiomatic</div><div class="text">' + (data.idiomatic || '') + '</div></div>';
+    html += '<div class="trans-card literal"><div class="label">Literal</div><div class="text">' + (data.literal || '') + '</div></div>';
+    html += '</div>';
+
+    if (data.words && data.words.length > 0) {
+        html += '<div class="section-label">Word by word</div>';
+        html += '<div class="breakdown-list">';
+        data.words.forEach(function (w, i) {
+            html += '<div class="breakdown-row">';
+            html += '<div class="hz">' + toneColorHanziNumbered(w.hz, w.py) + '</div>';
+            html += '<div class="meta">';
+            html += '<div class="py">' + formatNumberedPinyin(w.py) + '</div>';
+            html += '<div class="gloss">' + (w.gloss || '') + '</div>';
+            if (w.role && w.role !== 'other') {
+                html += '<div class="role">' + w.role + '</div>';
+            }
+            html += '</div>';
+            html += '<button class="add-word" data-word-idx="' + i + '" title="Add to word list">+</button>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    if (data.grammar && data.grammar.length > 0) {
+        html += '<div class="section-label">Grammar notes</div>';
+        html += '<div class="grammar-notes"><ul>';
+        data.grammar.forEach(function (g) {
+            let formatted = g.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html += '<li>' + formatted + '</li>';
+        });
+        html += '</ul></div>';
+    }
+
+    html += '<div class="ai-foot">';
+    html += '<span>Generated by ' + (providerName || 'AI') + '</span>';
+    html += '<button class="save" id="zhongwen-panel-save">Save sentence</button>';
+    html += '</div>';
+
+    scroll.innerHTML = html;
+
+    document.getElementById('zhongwen-panel-save').addEventListener('click', function () {
+        saveSentence(sentence, data);
+        this.classList.add('is-saved');
+        this.textContent = '✓ Saved';
+    });
+
+    scroll.querySelectorAll('.add-word').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            let w = data.words[parseInt(this.dataset.wordIdx)];
+            if (!w) return;
+            chrome.runtime.sendMessage({
+                type: 'add',
+                entries: [{
+                    simplified: w.hz,
+                    traditional: w.hz,
+                    pinyin: numberedToMarkPinyin(w.py),
+                    definition: w.gloss || ''
+                }],
+                list: document.title || document.location.hostname
+            });
+            this.classList.add('is-saved');
+            this.textContent = '✓';
+        });
+    });
+}
+
+function parseAIResponse(text) {
+    let raw = text.trim();
+    // Strip code fences
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    // Extract first JSON object
+    let m = raw.match(/\{[\s\S]*\}/);
+    if (!m) return parseAIPlainText(text);
+    raw = m[0];
+
+    // Strategy 1: direct parse
+    try { return JSON.parse(raw); } catch (e) {}
+
+    // Strategy 2: collapse newlines, fix trailing commas
+    let cleaned = raw.replace(/[\r\n]+/g, ' ').replace(/,\s*([\]}])/g, '$1');
+    try { return JSON.parse(cleaned); } catch (e) {}
+
+    // Strategy 3: strip control chars, fix smart quotes
+    cleaned = cleaned.replace(/[\x00-\x1f\x7f]/g, ' ')
+                     .replace(/“|”/g, '"')
+                     .replace(/‘|’/g, "'");
+    try { return JSON.parse(cleaned); } catch (e) {}
+
+    // Strategy 4: regex extraction of key fields from near-valid JSON
+    try {
+        var dq = String.fromCharCode(34);
+        var valPat = '((?:[^' + dq + '\\\\]|\\\\.)*)';
+        var patI = new RegExp(dq + 'idiomatic' + dq + '\\s*:\\s*' + dq + valPat + dq);
+        var patL = new RegExp(dq + 'literal' + dq + '\\s*:\\s*' + dq + valPat + dq);
+        var mI = raw.match(patI);
+        var mL = raw.match(patL);
+        var idiomatic = mI ? mI[1] : '';
+        var literal = mL ? mL[1] : '';
+        if (idiomatic || literal) {
+            var words = [];
+            var wordPat = new RegExp(
+                '\\{\\s*' + dq + 'hz' + dq + '\\s*:\\s*' + dq + valPat + dq +
+                '\\s*,\\s*' + dq + 'py' + dq + '\\s*:\\s*' + dq + valPat + dq +
+                '\\s*,\\s*' + dq + 'gloss' + dq + '\\s*:\\s*' + dq + valPat + dq +
+                '(?:\\s*,\\s*' + dq + 'role' + dq + '\\s*:\\s*' + dq + valPat + dq + ')?',
+                'g'
+            );
+            var wm;
+            while ((wm = wordPat.exec(raw)) !== null) {
+                words.push({
+                    hz: wm[1].replace(/\\"/g, '"'),
+                    py: wm[2].replace(/\\"/g, '"'),
+                    gloss: wm[3].replace(/\\"/g, '"'),
+                    role: wm[4] ? wm[4].replace(/\\"/g, '"') : 'other'
+                });
+            }
+            var patG = new RegExp(dq + 'grammar' + dq + '\\s*:\\s*\\[([\\s\\S]*?)\\]');
+            var mG = raw.match(patG);
+            var grammar = [];
+            if (mG) {
+                var reGI = new RegExp(dq + valPat + dq, 'g');
+                var gi;
+                while ((gi = reGI.exec(mG[1])) !== null) grammar.push(gi[1]);
+            }
+            return {
+                idiomatic: idiomatic.replace(/\\"/g, '"').replace(/\\n/g, ' '),
+                literal: literal.replace(/\\"/g, '"').replace(/\\n/g, ' '),
+                words: words,
+                grammar: grammar
+            };
+        }
+    } catch (e) {}
+
+    return parseAIPlainText(text);
+}
+
+function parseAIPlainText(text) {
+    try {
+        var fullText = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        var litMatch = fullText.match(/literal\s*:\s*([\s\S]+?)(?=\n\s*(?:idiomatic|words|grammar)\s*:|$)/i);
+        var idiMatch = fullText.match(/idiomatic\s*:\s*([\s\S]+?)(?=\n\s*(?:literal|words|grammar)\s*:|$)/i);
+        if (litMatch || idiMatch) {
+            var ptWords = [];
+            var ptWordRe = /hz\s*:\s*([^,]+),\s*py\s*:\s*([^,]+),\s*gloss\s*:\s*([^,]+?)(?:,\s*role\s*:\s*(\S+))?(?:\s*,?\s*)$/gm;
+            var ptm;
+            while ((ptm = ptWordRe.exec(fullText)) !== null) {
+                ptWords.push({
+                    hz: ptm[1].trim(),
+                    py: ptm[2].trim(),
+                    gloss: ptm[3].trim(),
+                    role: ptm[4] ? ptm[4].trim().replace(/,$/, '') : 'other'
+                });
+            }
+            var ptGrammar = [];
+            var gramSec = fullText.match(/grammar\s*:\s*\n?([\s\S]+?)$/i);
+            if (gramSec) {
+                ptGrammar = gramSec[1].split('\n')
+                    .map(function (l) { return l.trim().replace(/^[-•*]\s*/, ''); })
+                    .filter(function (l) { return l && !/^hz\s*:/.test(l); });
+            }
+            return {
+                literal: litMatch ? litMatch[1].trim().replace(/,\s*$/, '') : '',
+                idiomatic: idiMatch ? idiMatch[1].trim().replace(/,\s*$/, '') : '',
+                words: ptWords,
+                grammar: ptGrammar
+            };
+        }
+    } catch (e) {}
+    return null;
+}
+
+function renderRawFallback(scroll, sentence, text, providerName) {
+    let raw = text.trim()
+        .replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '')
+        .replace(/[{}[\]"]/g, '').trim();
+    let lines = raw.split('\n').filter(function(l) { return l.trim(); });
+    let html = '<div class="src-sentence">' + sentence + '</div>';
+    html += '<div class="section-label">AI Analysis</div>';
+    html += '<div class="grammar-notes"><ul>';
+    lines.forEach(function(line) {
+        let cleaned = line.trim().replace(/^[-,]/, '').trim();
+        if (cleaned) html += '<li>' + cleaned + '</li>';
+    });
+    html += '</ul></div>';
+    html += '<div class="ai-foot"><span>Raw response from ' + (providerName || 'AI') + ' (could not parse structured data)</span></div>';
+    scroll.innerHTML = html;
+}
+
+function toneColorHanziNumbered(hanzi, numberedPinyin) {
+    let syllables = numberedPinyin.split(/\s+/);
+    let chars = hanzi.split('');
+    let html = '';
+    for (let i = 0; i < chars.length; i++) {
+        let tone = 5;
+        if (i < syllables.length) {
+            let m = syllables[i].match(/[1-5]$/);
+            if (m) tone = parseInt(m[0]);
+        }
+        html += '<span class="tone' + tone + '">' + chars[i] + '</span>';
+    }
+    return html;
+}
+
+function numberedToMarkPinyin(py) {
+    return py.split(/\s+/).map(function (s) {
+        let parsed = parse(s);
+        if (parsed) {
+            let t = tonify(parsed[2], parsed[4]);
+            return parsed[1] + t[1] + parsed[3];
+        }
+        return s;
+    }).join(' ');
+}
+
+function formatNumberedPinyin(py) {
+    return py.split(/\s+/).map(function (s) {
+        let parsed = parse(s);
+        if (parsed) {
+            let t = tonify(parsed[2], parsed[4]);
+            let marked = parsed[1] + t[0] + parsed[3];
+            return '<span class="tone' + parsed[4] + '">' + marked + '</span>';
+        }
+        let tone = toneFromMark(s);
+        return '<span class="tone' + tone + '">' + s + '</span>';
+    }).join(' ');
+}
+
+function saveSentence(sentence, data) {
+    let pinyin = data.words ? data.words.map(function (w) { return w.py; }).join(' ') : '';
+    let entry = {
+        simplified: sentence,
+        traditional: sentence,
+        pinyin: pinyin,
+        definition: data.idiomatic || '',
+        notes: 'Literal: ' + (data.literal || ''),
+        timestamp: Date.now(),
+        isSentence: true,
+        box: 1,
+        breakdown: {
+            literal: data.literal || '',
+            idiomatic: data.idiomatic || '',
+            words: data.words || [],
+            grammar: data.grammar || []
+        }
+    };
+    chrome.runtime.sendMessage({ 'type': 'add', 'entries': [entry], 'list': document.title || document.location.hostname });
+}
+
+function closePanel() {
+    let panel = document.getElementById('zhongwen-panel');
+    if (panel) {
+        panel.classList.remove('is-open');
+        panelOpen = false;
+    }
+}
+
+function saveEntry(index) {
+    if (index < 0 || index >= savedSearchResults.length) return;
+    let r = savedSearchResults[index];
+    chrome.runtime.sendMessage({
+        'type': 'add',
+        'entries': [{
+            simplified: r[0],
+            traditional: r[1],
+            pinyin: r[2],
+            definition: r[3]
+        }],
+        'list': document.title || document.location.hostname
+    });
+    let msg;
+    if (savedSearchResults.length === 1) {
+        msg = 'Saved to word list.';
+    } else {
+        msg = 'Saved #' + (index + 1) + ' to word list.';
+    }
+    msg += '<br><kbd>Alt+W</kbd> to open word list.';
+    showPopup('<div class="cz-msg">' + msg + '</div>', null, -1, -1);
 }
 
 function onKeyDown(keyDown) {
@@ -107,7 +547,10 @@ function onKeyDown(keyDown) {
     }
 
     if (keyDown.keyCode === 27) {
-        // esc key pressed
+        if (panelOpen) {
+            closePanel();
+            return;
+        }
         hidePopup();
         return;
     }
@@ -188,49 +631,43 @@ function onKeyDown(keyDown) {
             break;
 
         case 82: // 'r'
-        {
-            let entries = [];
-            for (let j = 0; j < savedSearchResults.length; j++) {
-                let entry = {
-                    simplified: savedSearchResults[j][0],
-                    traditional: savedSearchResults[j][1],
-                    pinyin: savedSearchResults[j][2],
-                    definition: savedSearchResults[j][3]
-                };
-                entries.push(entry);
+            if (keyDown.shiftKey && savedSearchResults.length > 0) {
+                let all = [];
+                for (let j = 0; j < savedSearchResults.length; j++) {
+                    all.push({
+                        simplified: savedSearchResults[j][0],
+                        traditional: savedSearchResults[j][1],
+                        pinyin: savedSearchResults[j][2],
+                        definition: savedSearchResults[j][3]
+                    });
+                }
+                chrome.runtime.sendMessage({ 'type': 'add', 'entries': all, 'list': document.title || document.location.hostname });
+                showPopup('<div class="cz-msg">Saved all ' + all.length + ' entries.<br><kbd>Alt+W</kbd> to open word list.</div>', null, -1, -1);
+            } else {
+                saveEntry(0);
             }
-
-            chrome.runtime.sendMessage({
-                'type': 'add',
-                'entries': entries
-            });
-
-            showPopup('Added to word list.<p>Press Alt+W to open word list.', null, -1, -1);
-        }
             break;
 
         case 83: // 's'
-            {
-
-                // https://www.skritter.com/vocab/api/add?from=Chrome&lang=zh&word=浏览&trad=瀏 覽&rdng=liú lǎn&defn=to skim over; to browse
-
+            if (keyDown.shiftKey) {
+                // Shift+S: Skritter
                 let skritter = 'https://skritter.com';
                 if (config.skritterTLD === 'cn') {
                     skritter = 'https://skritter.cn';
                 }
-
                 skritter +=
                     '/vocab/api/add?from=zhongwen&ref=zhongwen&lang=zh&word=' +
                     encodeURIComponent(savedSearchResults[0][0]) +
                     '&trad=' + encodeURIComponent(savedSearchResults[0][1]) +
                     '&rdng=' + encodeURIComponent(savedSearchResults[0][4]) +
                     '&defn=' + encodeURIComponent(savedSearchResults[0][3]);
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'skritter',
-                    url: skritter
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'skritter', url: skritter });
+            } else {
+                // S: Sentence breakdown
+                let sentence = getSurroundingSentence();
+                if (sentence) {
+                    openPanel(sentence);
+                }
             }
             break;
 
@@ -279,115 +716,84 @@ function onKeyDown(keyDown) {
 
         case 49: // '1'
             if (keyDown.altKey) {
-
-                // use the simplified character for linedict lookup
                 let simp = savedSearchResults[0][0];
-
-                // https://english.dict.naver.com/english-chinese-dictionary/#/search?query=%E8%AF%8D%E5%85%B8
                 let linedict = 'https://english.dict.naver.com/english-chinese-dictionary/#/search?query=' +
                     encodeURIComponent(simp);
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'linedict',
-                    url: linedict
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'linedict', url: linedict });
+            } else if (savedSearchResults.length > 1) {
+                saveEntry(0);
             }
             break;
 
         case 50: // '2'
             if (keyDown.altKey) {
-                let sel = encodeURIComponent(
-                    window.getSelection().toString());
-
-                // https://forvo.com/search/%E4%B8%AD%E6%96%87/zh/
-                var forvo = 'https://forvo.com/search/' + sel + '/zh/';
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'forvo',
-                    url: forvo
-                });
+                let sel = encodeURIComponent(window.getSelection().toString());
+                let forvo = 'https://forvo.com/search/' + sel + '/zh/';
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'forvo', url: forvo });
+            } else if (savedSearchResults.length > 1) {
+                saveEntry(1);
             }
             break;
 
         case 51: // '3'
             if (keyDown.altKey) {
-                let sel = encodeURIComponent(
-                    window.getSelection().toString());
-
-                // https://dict.cn/%E7%BF%BB%E8%AF%91
+                let sel = encodeURIComponent(window.getSelection().toString());
                 let dictcn = 'https://dict.cn/' + sel;
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'dictcn',
-                    url: dictcn
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'dictcn', url: dictcn });
+            } else if (savedSearchResults.length > 2) {
+                saveEntry(2);
             }
             break;
 
         case 52: // '4'
             if (keyDown.altKey) {
-                let sel = encodeURIComponent(
-                    window.getSelection().toString());
-
-                // https://www.iciba.com/%E4%B8%AD%E9%A4%90
+                let sel = encodeURIComponent(window.getSelection().toString());
                 let iciba = 'https://www.iciba.com/' + sel;
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'iciba',
-                    url: iciba
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'iciba', url: iciba });
+            } else if (savedSearchResults.length > 3) {
+                saveEntry(3);
             }
             break;
 
         case 53: // '5'
             if (keyDown.altKey) {
-                let sel = encodeURIComponent(
-                    window.getSelection().toString());
-
-                // https://www.mdbg.net/chinese/dictionary?page=worddict&wdrst=0&wdqb=%E4%B8%AD%E6%96%87
+                let sel = encodeURIComponent(window.getSelection().toString());
                 let mdbg = 'https://www.mdbg.net/chinese/dictionary?page=worddict&wdrst=0&wdqb=' + sel;
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'mdbg',
-                    url: mdbg
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'mdbg', url: mdbg });
+            } else if (savedSearchResults.length > 4) {
+                saveEntry(4);
             }
             break;
 
         case 54: // '6'
             if (keyDown.altKey) {
-                let sel = encodeURIComponent(
-                    window.getSelection().toString());
-
+                let sel = encodeURIComponent(window.getSelection().toString());
                 let reverso = 'https://context.reverso.net/translation/chinese-english/' + sel;
-
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'reverso',
-                    url: reverso
-                });
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'reverso', url: reverso });
+            } else if (savedSearchResults.length > 5) {
+                saveEntry(5);
             }
             break;
 
         case 55: // '7'
             if (keyDown.altKey) {
-
-                // use the traditional character for moedict lookup
                 let trad = savedSearchResults[0][1];
-
-                // https://www.moedict.tw/~%E4%B8%AD%E6%96%87
                 let moedict = 'https://www.moedict.tw/~' + encodeURIComponent(trad);
+                chrome.runtime.sendMessage({ type: 'open', tabType: 'moedict', url: moedict });
+            } else if (savedSearchResults.length > 6) {
+                saveEntry(6);
+            }
+            break;
 
-                chrome.runtime.sendMessage({
-                    type: 'open',
-                    tabType: 'moedict',
-                    url: moedict
-                });
+        case 56: // '8'
+            if (!keyDown.altKey && savedSearchResults.length > 7) {
+                saveEntry(7);
+            }
+            break;
+
+        case 57: // '9'
+            if (!keyDown.altKey && savedSearchResults.length > 8) {
+                saveEntry(8);
             }
             break;
 
@@ -585,7 +991,7 @@ function processSearchResult(result) {
         highlightMatch(doc, rangeNode, selStartOffset, highlightLength, selEndList);
     }
 
-    showPopup(makeHtml(result, config.tonecolors !== 'no'), savedTarget, popX, popY, false);
+    showPopup(makeHtml(result, config.tonecolors !== 'no'), savedTarget, popX, popY);
 }
 
 // modifies selEndList as a side-effect
@@ -628,7 +1034,7 @@ function getTextFromSingleNode(node, selEndList, maxLength) {
     }
 }
 
-function showPopup(html, elem, x, y, looseWidth) {
+function showPopup(html, elem, x, y) {
 
     if (!x || !y) {
         x = y = 0;
@@ -642,109 +1048,79 @@ function showPopup(html, elem, x, y, looseWidth) {
         document.documentElement.appendChild(popup);
     }
 
-    popup.style.width = 'auto';
-    popup.style.height = 'auto';
-    popup.style.maxWidth = (looseWidth ? '' : '600px');
-    popup.className = `background-${config.css} tonecolor-${config.toneColorScheme}`;
+    popup.className = 'cz-popup';
+    popup.setAttribute('data-direction', config.direction || 'vellum');
+    popup.setAttribute('data-mode', config.mode || 'light');
+    popup.setAttribute('data-density', config.density || 'regular');
+    popup.setAttribute('data-hanzi-font', config.hanziFont || 'serif');
 
-    $(popup).html(html);
+    if (config.tonecolors === 'no') {
+        popup.setAttribute('data-tone-scheme', 'none');
+    } else if (config.toneColorScheme && config.toneColorScheme !== 'signature') {
+        popup.setAttribute('data-tone-scheme', config.toneColorScheme);
+    } else {
+        popup.removeAttribute('data-tone-scheme');
+    }
+
+    popup.innerHTML = html;
 
     if (elem) {
-        popup.style.top = '-1000px';
-        popup.style.left = '0px';
+        popup.classList.remove('is-visible');
         popup.style.display = '';
+        popup.style.left = '0px';
+        popup.style.top = '-9999px';
 
         let pW = popup.offsetWidth;
         let pH = popup.offsetHeight;
 
-        if (pW <= 0) {
-            pW = 200;
-        }
-        if (pH <= 0) {
-            pH = 0;
-            let j = 0;
-            while ((j = html.indexOf('<br/>', j)) !== -1) {
-                j += 5;
-                pH += 22;
-            }
-            pH += 25;
-        }
+        if (pW <= 0) pW = 240;
+        if (pH <= 0) pH = 80;
 
         if (altView === 1) {
-            x = window.scrollX;
-            y = window.scrollY;
-        } else if (altView === 2) {
-            x = (window.innerWidth - (pW + 20)) + window.scrollX;
-            y = (window.innerHeight - (pH + 20)) + window.scrollY;
-        } else if (elem instanceof window.HTMLOptionElement) {
-
             x = 0;
             y = 0;
-
-            let p = elem;
-            while (p) {
-                x += p.offsetLeft;
-                y += p.offsetTop;
-                p = p.offsetParent;
-            }
-
-            if (elem.offsetTop > elem.parentNode.clientHeight) {
-                y -= elem.offsetTop;
-            }
-
-            if (x + popup.offsetWidth > window.innerWidth) {
-                // too much to the right, go left
-                x -= popup.offsetWidth + 5;
-                if (x < 0) {
-                    x = 0;
-                }
-            } else {
-                // use SELECT's width
-                x += elem.parentNode.offsetWidth + 5;
+        } else if (altView === 2) {
+            x = window.innerWidth - pW - 20;
+            y = window.innerHeight - pH - 20;
+        } else if (elem instanceof window.HTMLOptionElement) {
+            let rect = elem.parentNode.getBoundingClientRect();
+            x = rect.right + 5;
+            y = rect.top;
+            if (x + pW > window.innerWidth) {
+                x = rect.left - pW - 5;
+                if (x < 0) x = 0;
             }
         } else {
-            // go left if necessary
             if (x + pW > window.innerWidth - 20) {
                 x = (window.innerWidth - pW) - 20;
-                if (x < 0) {
-                    x = 0;
-                }
+                if (x < 0) x = 0;
             }
 
-            // below the mouse
             let v = 25;
-
-            // go up if necessary
             if (y + v + pH > window.innerHeight) {
                 let t = y - pH - 30;
-                if (t >= 0) {
-                    y = t;
-                }
-            } else  {
+                if (t >= 0) y = t;
+            } else {
                 y += v;
             }
-
-            x += window.scrollX;
-            y += window.scrollY;
         }
-    } else {
-        x += window.scrollX;
-        y += window.scrollY;
     }
 
-    // (-1, -1) indicates: leave position unchanged
     if (x !== -1 && y !== -1) {
         popup.style.left = x + 'px';
         popup.style.top = y + 'px';
-        popup.style.display = '';
     }
+    popup.style.display = '';
+    popup.offsetHeight;
+    popup.classList.add('is-visible');
 }
 
 function hidePopup() {
     let popup = document.getElementById('zhongwen-window');
     if (popup) {
+        popup.classList.remove('is-visible');
         popup.style.display = 'none';
-        popup.textContent = '';
+        popup.innerHTML = '';
     }
 }
 
@@ -789,7 +1165,7 @@ function clearHighlight() {
 
 function isVisible() {
     let popup = document.getElementById('zhongwen-window');
-    return popup && popup.style.display !== 'none';
+    return popup && popup.classList.contains('is-visible');
 }
 
 function getTextForClipboard() {
@@ -874,7 +1250,23 @@ function copyToClipboard(data) {
         'data': data
     });
 
-    showPopup('Copied to clipboard', null, -1, -1);
+    showPopup('<div class="cz-msg">Copied to clipboard</div>', null, -1, -1);
+}
+
+function toneColorHanzi(hanzi, pinyinStr, showToneColors) {
+    if (!showToneColors) return hanzi;
+    let syllables = pinyinStr.split(/[\s·]+/).filter(s => s !== ',');
+    let chars = hanzi.split('');
+    let html = '';
+    for (let i = 0; i < chars.length; i++) {
+        let tone = 5;
+        if (i < syllables.length) {
+            let m = syllables[i].match(/[1-5]$/);
+            if (m) tone = parseInt(m[0]);
+        }
+        html += '<span class="tone' + tone + '">' + chars[i] + '</span>';
+    }
+    return html;
 }
 
 function makeHtml(result, showToneColors) {
@@ -882,7 +1274,6 @@ function makeHtml(result, showToneColors) {
     let entry;
     let html = '';
     let texts = [];
-    let hanziClass;
 
     if (result === null) return '';
 
@@ -890,78 +1281,73 @@ function makeHtml(result, showToneColors) {
         entry = result.data[i][0].match(/^([^\s]+?)\s+([^\s]+?)\s+\[(.*?)\]?\s*\/(.+)\//);
         if (!entry) continue;
 
+        let simplified = entry[2];
+        let traditional = entry[1];
+        let rawPinyin = entry[3];
+
+        html += '<div class="entry">';
+        if (result.data.length > 1) {
+            html += '<span class="entry-num">' + (i + 1) + '</span>';
+        }
+        html += '<div class="head">';
+
         // Hanzi
-
         if (config.simpTrad === 'auto') {
-
             let word = result.data[i][1];
-
-            hanziClass = 'w-hanzi';
-            if (config.fontSize === 'small') {
-                hanziClass += '-small';
-            }
-            html += '<span class="' + hanziClass + '">' + word + '</span>&nbsp;';
-
+            html += '<div class="hanzi">' + toneColorHanzi(word, rawPinyin, showToneColors) + '</div>';
         } else {
-
-            hanziClass = 'w-hanzi';
-            if (config.fontSize === 'small') {
-                hanziClass += '-small';
+            html += '<div class="hanzi">';
+            html += toneColorHanzi(simplified, rawPinyin, showToneColors);
+            if (traditional !== simplified) {
+                html += '<span class="alt">' + toneColorHanzi(traditional, rawPinyin, showToneColors) + '</span>';
             }
-            html += '<span class="' + hanziClass + '">' + entry[2] + '</span>&nbsp;';
-            if (entry[1] !== entry[2]) {
-                html += '<span class="' + hanziClass + '">' + entry[1] + '</span>&nbsp;';
-            }
-
+            html += '</div>';
         }
 
         // Pinyin
-
-        let pinyinClass = 'w-pinyin';
-        if (config.fontSize === 'small') {
-            pinyinClass += '-small';
-        }
-        let p = pinyinAndZhuyin(entry[3], showToneColors, pinyinClass);
-        html += p[0];
+        let p = pinyinAndZhuyin(rawPinyin, showToneColors);
+        html += '<div class="pinyin">' + p[0] + '</div>';
 
         // Zhuyin
-
         if (config.zhuyin === 'yes') {
-            html += '<br>' + p[2];
+            html += '<span class="zhuyin">' + p[2] + '</span>';
         }
+
+        html += '</div>'; // .head
 
         // Definition
-
-        let defClass = 'w-def';
-        if (config.fontSize === 'small') {
-            defClass += '-small';
-        }
-        let translation = entry[4].replace(/\//g, ' ◆ ');
-        html += '<br><span class="' + defClass + '">' + translation + '</span><br>';
-
-        let addFinalBr = false;
+        let translation = entry[4].replace(/\//g, '; ');
+        html += '<p class="def">' + translation + '</p>';
 
         // Grammar
         if (config.grammar !== 'no' && result.grammar && result.grammar.index === i) {
-            html += '<br><span class="grammar">Press "g" for grammar and usage notes.</span><br>';
-            addFinalBr = true;
+            html += '<div class="grammar">Press <kbd>G</kbd> for grammar and usage notes.</div>';
         }
 
         // Vocab
         if (config.vocab !== 'no' && result.vocab && result.vocab.index === i) {
-            html += '<br><span class="vocab">Press "v" for vocabulary notes.</span><br>';
-            addFinalBr = true;
+            html += '<div class="grammar">Press <kbd>V</kbd> for vocabulary notes.</div>';
         }
 
-        if (addFinalBr) {
-            html += '<br>';
-        }
+        html += '</div>'; // .entry
 
-        texts[i] = [entry[2], entry[1], p[1], translation, entry[3]];
+        texts[i] = [simplified, traditional, p[1], translation, rawPinyin];
     }
+
     if (result.more) {
-        html += '&hellip;<br/>';
+        html += '<div class="cz-msg">&hellip;</div>';
     }
+
+    html += '<div class="keys">';
+    html += '<span><kbd>R</kbd>save' + (result.data.length > 1 ? ' #1' : '') + '</span>';
+    if (result.data.length > 1) {
+        html += '<span><kbd>1</kbd>–<kbd>' + result.data.length + '</kbd>save #</span>';
+        html += '<span><kbd>Shift+R</kbd>save all</span>';
+    }
+    html += '<span><kbd>S</kbd>breakdown</span>';
+    html += '<span><kbd>C</kbd>copy</span>';
+    html += '<span><kbd>N</kbd>next word</span>';
+    html += '</div>';
 
     savedSearchResults = texts;
     savedSearchResults.grammar = result.grammar;
@@ -1020,7 +1406,7 @@ function tonify(vowels, tone) {
     return [html, text];
 }
 
-function pinyinAndZhuyin(syllables, showToneColors, pinyinClass) {
+function pinyinAndZhuyin(syllables, showToneColors) {
     let text = '';
     let html = '';
     let zhuyin = '';
@@ -1028,7 +1414,6 @@ function pinyinAndZhuyin(syllables, showToneColors, pinyinClass) {
     for (let i = 0; i < a.length; i++) {
         let syllable = a[i];
 
-        // ',' in pinyin
         if (syllable === ',') {
             html += ' ,';
             text += ' ,';
@@ -1036,84 +1421,48 @@ function pinyinAndZhuyin(syllables, showToneColors, pinyinClass) {
         }
 
         if (i > 0) {
-            html += '&nbsp;';
+            html += ' ';
             text += ' ';
-            zhuyin += '&nbsp;';
+            zhuyin += ' ';
         }
         if (syllable === 'r5') {
-            if (showToneColors) {
-                html += '<span class="' + pinyinClass + ' tone5">r</span>';
-            } else {
-                html += '<span class="' + pinyinClass + '">r</span>';
-            }
+            html += showToneColors ? '<span class="tone5">r</span>' : 'r';
             text += 'r';
             continue;
         }
         if (syllable === 'xx5') {
-            if (showToneColors) {
-                html += '<span class="' + pinyinClass + ' tone5">??</span>';
-            } else {
-                html += '<span class="' + pinyinClass + '">??</span>';
-            }
+            html += showToneColors ? '<span class="tone5">??</span>' : '??';
             text += '??';
             continue;
         }
         let m = parse(syllable);
         if (showToneColors) {
-            html += '<span class="' + pinyinClass + ' tone' + m[4] + '">';
-        } else {
-            html += '<span class="' + pinyinClass + '">';
+            html += '<span class="tone' + m[4] + '">';
         }
         let t = tonify(m[2], m[4]);
         html += m[1] + t[0] + m[3];
-        html += '</span>';
+        if (showToneColors) {
+            html += '</span>';
+        }
         text += m[1] + t[1] + m[3];
 
-        let zhuyinClass = 'w-zhuyin';
-        if (config.fontSize === 'small') {
-            zhuyinClass += '-small';
-        }
-
-        zhuyin += '<span class="tone' + m[4] + ' ' + zhuyinClass + '">'
+        zhuyin += '<span class="tone' + m[4] + '">'
             + globalThis.numericPinyin2Zhuyin(syllable) + '</span>';
     }
     return [html, text, zhuyin];
 }
 
-let miniHelp = `
-    <span style="font-weight: bold;">Zhongwen Chinese-English Dictionary</span><br><br>
-    <p>Keyboard shortcuts:<p>
-    <table style="margin: 10px;" cellspacing=5 cellpadding=5>
-    <tr><td><b>n&nbsp;:</b></td><td>&nbsp;Next word</td></tr>
-    <tr><td><b>b&nbsp;:</b></td><td>&nbsp;Previous character</td></tr>
-    <tr><td><b>m&nbsp;:</b></td><td>&nbsp;Next character</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>a&nbsp;:</b></td><td>&nbsp;Alternate pop-up location</td></tr>
-    <tr><td><b>y&nbsp;:</b></td><td>&nbsp;Move pop-up location down</td></tr>
-    <tr><td><b>x&nbsp;:</b></td><td>&nbsp;Move pop-up location up</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>c&nbsp;:</b></td><td>&nbsp;Copy translation to clipboard</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>r&nbsp;:</b></td><td>&nbsp;Remember word by adding it to the built-in word list</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>Alt w&nbsp;:</b></td><td>&nbsp;Show the built-in word list in a new tab</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>s&nbsp;:</b></td><td>&nbsp;Add word to Skritter queue</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    </table>
-    Look up selected text in online resources:
-    <table style="margin: 10px;" cellspacing=5 cellpadding=5>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>Alt + 1 :</b></td><td>&nbsp;LINE Dict</td></tr>
-    <tr><td><b>Alt + 2 :</b></td><td>&nbsp;Forvo</td></tr>
-    <tr><td><b>Alt + 3 :</b></td><td>&nbsp;Dict.cn</td></tr>
-    <tr><td><b>Alt + 4&nbsp;:</b></td><td>&nbsp;iCIBA</td></tr>
-    <tr><td><b>Alt + 5&nbsp;:</b></td><td>&nbsp;MDBG</td></tr>
-    <tr><td><b>Alt + 6&nbsp;:</b></td><td>&nbsp;Reverso</td></tr>
-    <tr><td><b>Alt + 7&nbsp;:</b></td><td>&nbsp;MoE Dict</td></tr>
-    <tr><td><b>&nbsp;</b></td><td>&nbsp;</td></tr>
-    <tr><td><b>t&nbsp;:</b></td><td>&nbsp;Tatoeba</td></tr>
-    </table>`;
+let miniHelp = '<div class="cz-msg"><strong>Zhongwen Chinese-English Dictionary</strong></div>'
+    + '<div class="keys" style="flex-direction:column;gap:6px;">'
+    + '<span><kbd>N</kbd>next word <kbd>B</kbd>prev char <kbd>M</kbd>next char</span>'
+    + '<span><kbd>A</kbd>alt position <kbd>X</kbd>up <kbd>Y</kbd>down</span>'
+    + '<span><kbd>R</kbd>remember <kbd>C</kbd>copy</span>'
+    + '<span><kbd>S</kbd>sentence <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
+    + '<span><kbd>Shift+S</kbd>Skritter</span>'
+    + '<span><kbd>Alt+W</kbd>word list</span>'
+    + '<span><kbd>Alt+1</kbd>LINE <kbd>Alt+2</kbd>Forvo <kbd>Alt+3</kbd>Dict.cn</span>'
+    + '<span><kbd>Alt+4</kbd>iCIBA <kbd>Alt+5</kbd>MDBG <kbd>Alt+6</kbd>Reverso <kbd>Alt+7</kbd>MoE</span>'
+    + '</div>';
 
 // event listener
 chrome.runtime.onMessage.addListener(
@@ -1128,11 +1477,16 @@ chrome.runtime.onMessage.addListener(
                 break;
             case 'showPopup':
                 if (!request.isHelp || window === window.top) {
-                    showPopup(request.text);
+                    showPopup('<div class="cz-msg">' + request.text + '</div>');
                 }
                 break;
             case 'showHelp':
                 showPopup(miniHelp);
+                break;
+            case 'breakdown-selection':
+                if (request.text) {
+                    openPanel(request.text);
+                }
                 break;
             default:
         }

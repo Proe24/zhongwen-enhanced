@@ -1,10 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html data-direction="vellum" data-mode="light" data-density="regular" data-hanzi-font="serif">
 <head>
     <title>Zhongwen Options</title>
     <meta charset="utf-8"/>
     <link rel="shortcut icon" href="images/zhongwen.png"/>
+    <link rel="stylesheet" type="text/css" href="css/content.css"/>
     <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css"/>
+    <link rel="stylesheet" type="text/css" href="css/zhongwen.css"/>
 </head>
 <body>
 <div class="container">
@@ -13,38 +15,88 @@
     <h2 class="mb-3">Appearance of the Pop-up Window</h2>
 
     <div class="form-group mb-4">
-        <label>
-            Background color of the pop-up window
-        </label>
+        <label>Visual direction</label>
         <div class="custom-control custom-radio">
-            <input type="radio" id="popupColorYellow" name="popupColor" class="custom-control-input"
-                   value="yellow">
-            <label class="custom-control-label" for="popupColorYellow">Yellow pop-up
-                background</label>
+            <input type="radio" id="directionVellum" name="direction" class="custom-control-input"
+                   value="vellum">
+            <label class="custom-control-label" for="directionVellum">Vellum — warm cream paper
+                with oxblood accents</label>
         </div>
         <div class="custom-control custom-radio">
-            <input type="radio" id="popupColorBlue" name="popupColor" class="custom-control-input"
-                   value="blue">
-            <label class="custom-control-label" for="popupColorBlue">Blue pop-up background</label>
+            <input type="radio" id="directionSlate" name="direction" class="custom-control-input"
+                   value="slate">
+            <label class="custom-control-label" for="directionSlate">Slate — cool editorial
+                off-white with deep blue accents</label>
         </div>
         <div class="custom-control custom-radio">
-            <input type="radio" id="popupColorLightBlue" name="popupColor"
-                   class="custom-control-input" value="lightblue">
-            <label class="custom-control-label" for="popupColorLightBlue">Light blue pop-up
-                background</label>
+            <input type="radio" id="directionCrimson" name="direction" class="custom-control-input"
+                   value="crimson">
+            <label class="custom-control-label" for="directionCrimson">Crimson — workbook style
+                with vermillion ink-stamp accents</label>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
+        <label>Color mode</label>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="modeLight" name="mode" class="custom-control-input"
+                   value="light">
+            <label class="custom-control-label" for="modeLight">Light</label>
         </div>
         <div class="custom-control custom-radio">
-            <input type="radio" id="popupColorBlack" name="popupColor" class="custom-control-input"
-                   value="black">
-            <label class="custom-control-label" for="popupColorBlack">Black pop-up
-                background</label>
+            <input type="radio" id="modeDark" name="mode" class="custom-control-input"
+                   value="dark">
+            <label class="custom-control-label" for="modeDark">Dark</label>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
+        <label>Popup density</label>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="densityCompact" name="density" class="custom-control-input"
+                   value="compact">
+            <label class="custom-control-label" for="densityCompact">Compact — smaller text,
+                tighter spacing</label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="densityRegular" name="density" class="custom-control-input"
+                   value="regular">
+            <label class="custom-control-label" for="densityRegular">Regular</label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="densityComfy" name="density" class="custom-control-input"
+                   value="comfy">
+            <label class="custom-control-label" for="densityComfy">Comfy — larger text, more
+                breathing room</label>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
+        <label>Hanzi font style</label>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="hanziFontSerif" name="hanziFont" class="custom-control-input"
+                   value="serif">
+            <label class="custom-control-label" for="hanziFontSerif">Serif (Songti / Noto Serif
+                SC)</label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="hanziFontSans" name="hanziFont" class="custom-control-input"
+                   value="sans">
+            <label class="custom-control-label" for="hanziFontSans">Sans-serif (Heiti / Noto Sans
+                SC)</label>
         </div>
     </div>
 
     <div class="form-group mb-4">
         <label>
-            Coloring pinyin syllables based on the tone of the character
+            Tone coloring for pinyin and hanzi characters
         </label>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="toneColorsSignature" name="toneColors"
+                   class="custom-control-input" value="signature">
+            <label class="custom-control-label" for="toneColorsSignature">Signature — adapts to
+                the visual direction and color mode.</label>
+        </div>
         <div class="custom-control custom-radio">
             <input type="radio" id="toneColorsStandard" name="toneColors"
                    class="custom-control-input" value="standard">
@@ -69,22 +121,6 @@
                    value="none">
             <label class="custom-control-label" for="toneColorsNone">Don't show any tone
                 colors.</label>
-        </div>
-    </div>
-
-    <div class="form-group mb-4">
-        <label>Font size of the characters in the pop-up window</label>
-        <div class="custom-control custom-radio">
-            <input type="radio" id="fontSizeSmall" name="fontSize" class="custom-control-input"
-                   value="small">
-            <label class="custom-control-label" for="fontSizeSmall">Display characters in a smaller
-                font size.</label>
-        </div>
-        <div class="custom-control custom-radio">
-            <input type="radio" id="fontSizeLarge" name="fontSize" class="custom-control-input"
-                   value="large">
-            <label class="custom-control-label" for="fontSizeLarge">Display characters in a larger
-                font size.</label>
         </div>
     </div>
 
@@ -132,6 +168,46 @@
             <input type="checkbox" class="custom-control-input" id="vocab" name="vocab">
             <label class="custom-control-label" for="vocab">Show vocabulary notes.</label>
         </div>
+    </div>
+
+    <h2 class="mb-3">Sentence Breakdown (AI)</h2>
+
+    <div class="form-group mb-4">
+        <label>AI provider for sentence breakdowns</label>
+        <p class="text-muted" style="font-size:13px;margin-bottom:8px">
+            Press <kbd>S</kbd> while the popup is showing to break down the surrounding sentence.
+        </p>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="providerGemini" name="aiProvider" class="custom-control-input"
+                   value="gemini">
+            <label class="custom-control-label" for="providerGemini">Google Gemini
+                <strong style="color:var(--accent)">(free tier available)</strong> —
+                <a href="https://aistudio.google.com/apikey" target="_blank">get key</a></label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="providerAnthropic" name="aiProvider" class="custom-control-input"
+                   value="anthropic">
+            <label class="custom-control-label" for="providerAnthropic">Anthropic Claude —
+                <a href="https://console.anthropic.com/settings/keys" target="_blank">get key</a></label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="providerOpenai" name="aiProvider" class="custom-control-input"
+                   value="openai">
+            <label class="custom-control-label" for="providerOpenai">OpenAI ChatGPT —
+                <a href="https://platform.openai.com/api-keys" target="_blank">get key</a></label>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
+        <label id="apiKeyLabel">API key</label>
+        <div class="input-group" style="max-width:480px">
+            <input type="password" class="form-control" id="apiKey"
+                   placeholder="">
+            <div class="input-group-append">
+                <button class="btn btn-outline-secondary" type="button" id="saveApiKey">Save</button>
+            </div>
+        </div>
+        <small id="apiKeyStatus" class="form-text" style="color:var(--ink-faint)"></small>
     </div>
 
     <h2 class="mb-3">Other Options</h2>

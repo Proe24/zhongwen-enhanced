@@ -40,7 +40,11 @@
   },
   "permissions": [
     "contextMenus",
-    "tabs"
+    "tabs",
+    "storage",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*"
   ],
   "commands": {
     "_execute_browser_action": {
@@ -50,6 +54,7 @@
   "web_accessible_resources": [
     "css/*",
     "js/*",
-    "images/*"
+    "images/*",
+    "fonts/*"
   ]
 }

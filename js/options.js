@@ -8,9 +8,6 @@
 
 function loadVals() {
 
-    const popupColor = localStorage['popupcolor'] || 'yellow';
-    document.querySelector(`input[name="popupColor"][value="${popupColor}"]`).checked = true;
-
     const toneColors = localStorage['tonecolors'] || 'yes';
     if (toneColors === 'no') {
         document.querySelector('#toneColorsNone').checked = true;
@@ -18,9 +15,6 @@ function loadVals() {
         const toneColorScheme = localStorage['toneColorScheme'] || 'standard';
         document.querySelector(`input[name="toneColors"][value="${toneColorScheme}"]`).checked = true;
     }
-
-    const fontSize = localStorage['fontSize'] || 'small';
-    document.querySelector(`input[name="fontSize"][value="${fontSize}"]`).checked = true;
 
     const simpTrad = localStorage['simpTrad'] || 'classic';
     document.querySelector(`input[name="simpTrad"][value="${simpTrad}"]`).checked = true;
@@ -39,11 +33,20 @@ function loadVals() {
 
     const skritterTLD = localStorage['skritterTLD'] || 'com';
     document.querySelector(`input[name="skritterTLD"][value="${skritterTLD}"]`).checked = true;
-}
 
-function setPopupColor(popupColor) {
-    localStorage['popupcolor'] = popupColor;
-    chrome.extension.getBackgroundPage().zhongwenOptions.css = popupColor;
+    const direction = localStorage['direction'] || 'vellum';
+    document.querySelector(`input[name="direction"][value="${direction}"]`).checked = true;
+
+    const mode = localStorage['mode'] || 'light';
+    document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
+
+    const density = localStorage['density'] || 'regular';
+    document.querySelector(`input[name="density"][value="${density}"]`).checked = true;
+
+    const hanziFont = localStorage['hanziFont'] || 'serif';
+    document.querySelector(`input[name="hanziFont"][value="${hanziFont}"]`).checked = true;
+
+    applyThemeToPage();
 }
 
 function setToneColorScheme(toneColorScheme) {
@@ -65,21 +68,27 @@ function setBooleanOption(option, value) {
     setOption(option, yesNo);
 }
 
-window.addEventListener('load', () => {
+function applyThemeToPage() {
+    const html = document.documentElement;
+    html.setAttribute('data-direction', localStorage['direction'] || 'vellum');
+    html.setAttribute('data-mode', localStorage['mode'] || 'light');
+    html.setAttribute('data-density', localStorage['density'] || 'regular');
+    html.setAttribute('data-hanzi-font', localStorage['hanziFont'] || 'serif');
+}
 
-    document.querySelectorAll('input[name="popupColor"]').forEach((input) => {
-        input.addEventListener('change',
-            () => setPopupColor(input.getAttribute('value')));
-    });
+function setThemeOption(option, value) {
+    setOption(option, value);
+    applyThemeToPage();
+    if (option === 'direction') {
+        chrome.runtime.sendMessage({ type: 'updateIcon' });
+    }
+}
+
+window.addEventListener('load', () => {
 
     document.querySelectorAll('input[name="toneColors"]').forEach((input) => {
         input.addEventListener('change',
             () => setToneColorScheme(input.getAttribute('value')));
-    });
-
-    document.querySelectorAll('input[name="fontSize"]').forEach((input) => {
-        input.addEventListener('change',
-            () => setOption('fontSize', input.getAttribute('value')));
     });
 
     document.querySelectorAll('input[name="simpTrad"]').forEach((input) => {
@@ -105,6 +114,80 @@ window.addEventListener('load', () => {
         input.addEventListener('change',
             () => setOption('skritterTLD', input.getAttribute('value')));
     });
+
+    document.querySelectorAll('input[name="direction"]').forEach((input) => {
+        input.addEventListener('change',
+            () => setThemeOption('direction', input.getAttribute('value')));
+    });
+
+    document.querySelectorAll('input[name="mode"]').forEach((input) => {
+        input.addEventListener('change',
+            () => setThemeOption('mode', input.getAttribute('value')));
+    });
+
+    document.querySelectorAll('input[name="density"]').forEach((input) => {
+        input.addEventListener('change',
+            () => setThemeOption('density', input.getAttribute('value')));
+    });
+
+    document.querySelectorAll('input[name="hanziFont"]').forEach((input) => {
+        input.addEventListener('change',
+            () => setThemeOption('hanziFont', input.getAttribute('value')));
+    });
+
+    // AI provider + API keys
+    let providerKeyMap = {
+        gemini: { storage: 'geminiApiKey', placeholder: 'AIza...' },
+        anthropic: { storage: 'anthropicApiKey', placeholder: 'sk-ant-...' },
+        openai: { storage: 'openaiApiKey', placeholder: 'sk-...' }
+    };
+
+    function loadProviderUI(provider) {
+        let info = providerKeyMap[provider] || providerKeyMap.gemini;
+        document.getElementById('apiKey').placeholder = info.placeholder;
+        document.getElementById('apiKey').value = '';
+        document.getElementById('apiKeyStatus').textContent = '';
+        chrome.storage.local.get(info.storage, function (result) {
+            if (result[info.storage]) {
+                document.getElementById('apiKey').value = result[info.storage];
+                document.getElementById('apiKeyStatus').textContent = 'Key saved.';
+            }
+        });
+    }
+
+    chrome.storage.local.get('aiProvider', function (result) {
+        let provider = result.aiProvider || 'gemini';
+        let el = document.querySelector('input[name="aiProvider"][value="' + provider + '"]');
+        if (el) el.checked = true;
+        loadProviderUI(provider);
+    });
+
+    document.querySelectorAll('input[name="aiProvider"]').forEach(function (input) {
+        input.addEventListener('change', function () {
+            let provider = input.value;
+            chrome.storage.local.set({ aiProvider: provider });
+            loadProviderUI(provider);
+        });
+    });
+
+    document.getElementById('saveApiKey').addEventListener('click', function () {
+        let provider = document.querySelector('input[name="aiProvider"]:checked');
+        if (!provider) return;
+        let info = providerKeyMap[provider.value];
+        let key = document.getElementById('apiKey').value.trim();
+        if (key) {
+            let obj = {};
+            obj[info.storage] = key;
+            chrome.storage.local.set(obj, function () {
+                document.getElementById('apiKeyStatus').textContent = 'Key saved.';
+            });
+        } else {
+            chrome.storage.local.remove(info.storage, function () {
+                document.getElementById('apiKeyStatus').textContent = 'Key removed.';
+            });
+        }
+    });
+
 });
 
 loadVals();
