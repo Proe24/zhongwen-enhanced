@@ -4,7 +4,7 @@
   "short_name": "Zhongwen Enhanced",
   "version": "1.0.0",
   "author": "Stephen Underwood",
-  "homepage_url": "https://github.com/Proe24/custom-zhongwen",
+  "homepage_url": "https://github.com/Proe24/zhongwen-enhanced",
   "description": "Chinese pop-up dictionary with AI sentence breakdown, vocab lists, and Anki/Pleco export. Based on the open-source Zhongwen project.",
   "icons": {
     "16": "images/zhongwen16.png",

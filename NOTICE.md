@@ -8,7 +8,7 @@ Chinese-English pop-up dictionary extension.
   (itself based on Rikaikun by Erek Speed, Rikaichan by Jonathan Zarate,
   and RikaiXUL by Todd Rudick.)
 - This fork: Copyright (C) 2026 Stephen Underwood
-  <https://github.com/Proe24/custom-zhongwen>
+  <https://github.com/Proe24/zhongwen-enhanced>
 
 This program is free software licensed under the **GNU General Public
 License, version 2 or later** (GPL-2.0-or-later). See [LICENSE](LICENSE).

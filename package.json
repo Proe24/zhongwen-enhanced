@@ -4,7 +4,7 @@
   "description": "Chinese Pop-Up Dictionary with AI sentence breakdown (fork of Zhongwen)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Proe24/custom-zhongwen.git"
+    "url": "git+https://github.com/Proe24/zhongwen-enhanced.git"
   },
   "keywords": [
     "Chinese",
@@ -13,9 +13,9 @@
   "author": "Stephen Underwood",
   "license": "GPL-2.0",
   "bugs": {
-    "url": "https://github.com/Proe24/custom-zhongwen/issues"
+    "url": "https://github.com/Proe24/zhongwen-enhanced/issues"
   },
-  "homepage": "https://github.com/Proe24/custom-zhongwen#readme",
+  "homepage": "https://github.com/Proe24/zhongwen-enhanced#readme",
   "devDependencies": {
     "eslint": "^8.10.0",
     "stylelint": "^14.5.3",

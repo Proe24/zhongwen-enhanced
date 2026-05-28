@@ -69,9 +69,9 @@ text or data leaves your device through this extension.
 ## Changes to this policy
 
 If this policy changes, the updated version will be posted in the project
-repository at <https://github.com/Proe24/custom-zhongwen>.
+repository at <https://github.com/Proe24/zhongwen-enhanced>.
 
 ## Contact
 
 Questions can be raised via the project's issue tracker:
-<https://github.com/Proe24/custom-zhongwen/issues>
+<https://github.com/Proe24/zhongwen-enhanced/issues>
