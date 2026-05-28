@@ -13,6 +13,7 @@ let selected = new Set();
 let editingIndex = -1;
 let currentMode = 'manage';
 let activeList = null;
+let activeSentenceList = null;
 let studyDeck = [];
 let cardIdx = 0;
 let flipped = false;
@@ -83,14 +84,17 @@ function getVisibleEntries() {
 function getSentenceEntries() {
     return entries.reduce((acc, e, i) => {
         if (!e.isSentence) return acc;
+        if (activeSentenceList !== null && (e.list || '') !== activeSentenceList) return acc;
         acc.push([e, i]);
         return acc;
     }, []);
 }
 
-function getLists() {
+function getLists(kind) {
     let counts = {};
     entries.forEach(e => {
+        if (kind === 'word' && e.isSentence) return;
+        if (kind === 'sentence' && !e.isSentence) return;
         let name = e.list || '';
         counts[name] = (counts[name] || 0) + 1;
     });
@@ -98,7 +102,7 @@ function getLists() {
 }
 
 function renderListBar() {
-    let lists = getLists();
+    let lists = getLists('word');
     let names = Object.keys(lists).sort((a, b) => a.localeCompare(b));
     let bar = document.getElementById('listBar');
     let sel = document.getElementById('listSelect');
@@ -109,7 +113,8 @@ function renderListBar() {
     }
     bar.style.display = '';
 
-    let html = '<option value="__all__">All words (' + entries.length + ')</option>';
+    let totalWords = entries.reduce((n, e) => n + (e.isSentence ? 0 : 1), 0);
+    let html = '<option value="__all__">All words (' + totalWords + ')</option>';
     names.forEach(name => {
         let label = name || 'Unsorted';
         let selected = activeList === name ? ' selected' : '';
@@ -119,6 +124,29 @@ function renderListBar() {
     sel.innerHTML = html;
 
     document.getElementById('renameListBtn').style.display = activeList ? '' : 'none';
+}
+
+function renderSentenceListBar() {
+    let lists = getLists('sentence');
+    let names = Object.keys(lists).sort((a, b) => a.localeCompare(b));
+    let bar = document.getElementById('sentenceListBar');
+    let sel = document.getElementById('sentenceListSelect');
+
+    if (names.length <= 1 && (!names[0] || names[0] === '')) {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = '';
+
+    let totalSentences = entries.reduce((n, e) => n + (e.isSentence ? 1 : 0), 0);
+    let html = '<option value="__all__">All sentences (' + totalSentences + ')</option>';
+    names.forEach(name => {
+        let label = name || 'Unsorted';
+        let selected = activeSentenceList === name ? ' selected' : '';
+        html += '<option value="' + escapeHtml(name) + '"' + selected + '>' + escapeHtml(label) + ' (' + lists[name] + ')</option>';
+    });
+    if (activeSentenceList === null) sel.value = '__all__';
+    sel.innerHTML = html;
 }
 
 function renderTable() {
@@ -258,10 +286,11 @@ function renderBreakdownHtml(bd) {
 
 function renderSentences() {
     let sents = getSentenceEntries();
+    let totalSentences = entries.reduce((n, e) => n + (e.isSentence ? 1 : 0), 0);
     let list = document.getElementById('sentenceList');
     list.innerHTML = '';
 
-    document.getElementById('noSentences').style.display = sents.length ? 'none' : '';
+    document.getElementById('noSentences').style.display = totalSentences ? 'none' : '';
     document.getElementById('sentenceActions').style.display = sents.length ? '' : 'none';
 
     sents.forEach(([e, i]) => {
@@ -303,6 +332,7 @@ function renderSentences() {
         list.appendChild(card);
     });
 
+    renderSentenceListBar();
     updateSentenceActions();
 }
 
@@ -611,6 +641,11 @@ document.addEventListener('DOMContentLoaded', function () {
         activeList = this.value === '__all__' ? null : this.value;
         selected = new Set();
         renderTable();
+    });
+    document.getElementById('sentenceListSelect').addEventListener('change', function () {
+        activeSentenceList = this.value === '__all__' ? null : this.value;
+        selected = new Set();
+        renderSentences();
     });
 
     document.getElementById('tabWords').addEventListener('click', () => setManageTab('words'));
