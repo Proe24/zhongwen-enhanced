@@ -1,5 +1,10 @@
 /*
- Zhongwen - A Chinese-English Pop-Up Dictionary
+ Zhongwen Enhanced - A Chinese-English Pop-Up Dictionary
+ Modified 2026 by Stephen Underwood: added AI sentence breakdown
+ (Anthropic / Gemini / OpenAI), vocab lists, Anki/Pleco export, and
+ Manifest V3 migration. See NOTICE.md for the full list of changes.
+
+ Based on Zhongwen
  Copyright (C) 2010-2019 Christian Schiller
  https://chrome.google.com/extensions/detail/kkmlkkjojmombglmlpbpapmhcaljjkde
 

@@ -1,21 +1,21 @@
 {
-  "name": "zhongwen",
-  "version": "5.15.0",
-  "description": "Chinese Pop-Up Dictionary",
+  "name": "zhongwen-enhanced",
+  "version": "1.0.0",
+  "description": "Chinese Pop-Up Dictionary with AI sentence breakdown (fork of Zhongwen)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cschiller/zhongwen.git"
+    "url": "git+https://github.com/Proe24/custom-zhongwen.git"
   },
   "keywords": [
     "Chinese",
     "Dictionary"
   ],
-  "author": "Christian Schiller",
+  "author": "Stephen Underwood",
   "license": "GPL-2.0",
   "bugs": {
-    "url": "https://github.com/cschiller/zhongwen/issues"
+    "url": "https://github.com/Proe24/custom-zhongwen/issues"
   },
-  "homepage": "https://github.com/cschiller/zhongwen#readme",
+  "homepage": "https://github.com/Proe24/custom-zhongwen#readme",
   "devDependencies": {
     "eslint": "^8.10.0",
     "stylelint": "^14.5.3",

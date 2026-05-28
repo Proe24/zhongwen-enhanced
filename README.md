@@ -1,4 +1,14 @@
-# 中文 Zhongwen
+# 中文 Zhongwen Enhanced
+
+> **Zhongwen Enhanced** is a fork of the original
+> [Zhongwen](https://github.com/cschiller/zhongwen) extension by Christian
+> Schiller, adding AI-powered sentence breakdown, vocabulary lists, study
+> mode, and Anki/Pleco export. See [NOTICE.md](NOTICE.md) for the list of
+> changes and [PRIVACY.md](PRIVACY.md) for the privacy policy. Licensed
+> under GPL-2.0-or-later, the same as the original.
+
+---
+
 
 [![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/kkmlkkjojmombglmlpbpapmhcaljjkde)](https://chrome.google.com/webstore/detail/zhongwen-chinese-english/kkmlkkjojmombglmlpbpapmhcaljjkde)
 [![Chrome Users](https://img.shields.io/chrome-web-store/users/kkmlkkjojmombglmlpbpapmhcaljjkde?label=chrome%20users)](https://chrome.google.com/webstore/detail/zhongwen-chinese-english/kkmlkkjojmombglmlpbpapmhcaljjkde)
@@ -212,4 +222,5 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 ---
 
-*Copyright (C) 2025 Christian Schiller*
+*Original Zhongwen: Copyright (C) 2010–2025 Christian Schiller*
+*Zhongwen Enhanced modifications: Copyright (C) 2026 Stephen Underwood*
