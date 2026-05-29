@@ -1011,6 +1011,23 @@
   font-size: 16px;
   color: var(--ink);
 }
+.cz-char-note {
+  margin-top: 12px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+.cz-char-note:empty { display: none; }
+.cz-char-note .cz-note-mark {
+  font-family: var(--font-hanzi);
+  color: var(--ink-soft);
+}
+.cz-char-note a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.cz-char-note a:hover { color: var(--ink); }
 
 .translation-grid {
   display: grid;

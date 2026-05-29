@@ -627,6 +627,7 @@ function openCharPanel(simplified, traditional) {
                     '<div class="cz-char-py" id="cz-py-' + i + '"></div>' +
                     '<div class="cz-char-def" id="cz-def-' + i + '"></div>' +
                     '<dl class="cz-char-meta" id="cz-meta-' + i + '"></dl>' +
+                    '<div class="cz-char-note" id="cz-note-' + i + '"></div>' +
                 '</div>' +
             '</div>';
     });
@@ -721,6 +722,20 @@ function renderCharCard(ch, key, data, colors) {
         rows += '<div><dt>Origin</dt><dd>' + etym + '</dd></div>';
     }
     meta.innerHTML = rows;
+
+    // When a component has no Unicode character (shown as "?" in the data),
+    // explain it and link out to sites that render the full breakdown.
+    let note = document.getElementById('cz-note-' + key);
+    if (note && data.decomposition && /[?？]/.test(data.decomposition)) {
+        let q = encodeURIComponent(ch);
+        note.innerHTML =
+            '<span class="cz-note-mark">？</span> = a sub-component with no Unicode ' +
+            'character, so it can’t be shown as text. See the full breakdown on ' +
+            '<a href="https://www.yellowbridge.com/chinese/character-etymology.php?zi=' + q +
+            '" target="_blank" rel="noreferrer noopener">YellowBridge</a> or ' +
+            '<a href="https://zi.tools/zi/' + q +
+            '" target="_blank" rel="noreferrer noopener">zi.tools</a>.';
+    }
 }
 
 function saveEntry(index) {
