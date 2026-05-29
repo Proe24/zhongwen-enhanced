@@ -23,3 +23,13 @@ Zhongwen be integrated with, the Chinese Grammar Wiki.
 Thanks also to Nick Winter from Skritter for his assistance with
 setting up the API for integrating Zhongwen with Skritter.
 (https://skritter.com/)
+
+The offline character-detail view (stroke-order animation, decomposition,
+and etymology) is built on:
+
+* **Hanzi Writer** by Jason Kennaly and contributors — MIT License.
+  (https://hanziwriter.org/)
+
+* **Make Me a Hanzi** by Shaunak Kishore and contributors — character
+  decomposition and etymology data, and stroke graphics derived from the
+  Arphic PL fonts. (https://github.com/skishore/makemeahanzi)

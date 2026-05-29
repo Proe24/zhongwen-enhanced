@@ -176,7 +176,7 @@ function createPanel() {
     panel.setAttribute('data-mode', config.mode || 'light');
     panel.innerHTML =
         '<header>' +
-            '<span class="title">Sentence Breakdown</span>' +
+            '<span class="title" id="zhongwen-panel-title">Sentence Breakdown</span>' +
             '<button class="close" id="zhongwen-panel-close">&times;</button>' +
         '</header>' +
         '<div class="scroll" id="zhongwen-panel-scroll"></div>';
@@ -194,6 +194,8 @@ function openPanel(sentence) {
     let panel = createPanel();
     panel.setAttribute('data-direction', config.direction || 'vellum');
     panel.setAttribute('data-mode', config.mode || 'light');
+    let title = document.getElementById('zhongwen-panel-title');
+    if (title) title.textContent = 'Sentence Breakdown';
     let scroll = document.getElementById('zhongwen-panel-scroll');
 
     scroll.innerHTML =
@@ -517,6 +519,210 @@ function closePanel() {
     }
 }
 
+// ── Character Detail Panel (stroke order, decomposition, etymology) ───
+//
+// Fully offline: stroke data from hanzi-writer-data (MIT) and decomposition /
+// etymology from Make Me a Hanzi (LGPL-3.0 / Arphic), merged at build time
+// into data/chardata/<codepoint>.json. See tools/build-chardata.js.
+
+let lastPanelWord = '';
+let charWriters = [];
+
+function charCodepoint(ch) {
+    return ch.codePointAt(0).toString(16);
+}
+
+function fetchCharData(cp) {
+    return fetch(chrome.runtime.getURL('data/chardata/' + cp + '.json'))
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null);
+}
+
+function formatEtymology(e) {
+    if (!e) return '';
+    if (e.type === 'pictophonetic') {
+        let parts = [];
+        if (e.semantic) {
+            parts.push('semantic <span class="cz-comp">' + e.semantic + '</span>' +
+                (e.hint ? ' (' + e.hint + ')' : ''));
+        }
+        if (e.phonetic) {
+            parts.push('phonetic <span class="cz-comp">' + e.phonetic + '</span>');
+        }
+        return 'Picto-phonetic — ' + parts.join(' + ');
+    }
+    let label = e.type ? (e.type.charAt(0).toUpperCase() + e.type.slice(1)) : 'Origin';
+    return label + (e.hint ? ' — ' + e.hint : '');
+}
+
+// Build an ordered, de-duplicated list of { ch, role } for the word's
+// characters. CEDICT keeps simplified and traditional character-aligned, so
+// we compare position by position: identical characters are labelled 'both',
+// differing ones produce a 'simplified' and a 'traditional' card.
+function charsWithForms(simplified, traditional) {
+    simplified = simplified || '';
+    traditional = traditional || simplified;
+    let seen = {};
+    let items = [];
+
+    function push(ch, role) {
+        if (!/\p{Script=Han}/u.test(ch)) return;
+        let key = charCodepoint(ch) + ':' + role;
+        if (seen[key]) return;
+        seen[key] = true;
+        items.push({ ch: ch, role: role });
+    }
+
+    let simp = [...simplified];
+    let trad = [...traditional];
+    if (simp.length === trad.length) {
+        for (let i = 0; i < simp.length; i++) {
+            if (simp[i] === trad[i]) {
+                push(simp[i], 'both');
+            } else {
+                push(simp[i], 'simplified');
+                push(trad[i], 'traditional');
+            }
+        }
+    } else {
+        // Lengths differ (rare) — fall back to listing every character once.
+        simp.concat(trad).forEach(ch => push(ch, 'both'));
+    }
+    return items;
+}
+
+function roleLabel(role) {
+    if (role === 'simplified') return 'Simplified';
+    if (role === 'traditional') return 'Traditional';
+    return 'Both';
+}
+
+function openCharPanel(simplified, traditional) {
+    let items = charsWithForms(simplified, traditional);
+    if (!items.length) return;
+    let word = items.map(it => it.role.charAt(0) + it.ch).join('');
+    if (panelOpen && word === lastPanelWord) return;
+    lastPanelWord = word;
+
+    // Tear down any writers from a previous open.
+    charWriters = [];
+
+    let panel = createPanel();
+    panel.setAttribute('data-direction', config.direction || 'vellum');
+    panel.setAttribute('data-mode', config.mode || 'light');
+    let title = document.getElementById('zhongwen-panel-title');
+    if (title) title.textContent = 'Character Detail';
+    let scroll = document.getElementById('zhongwen-panel-scroll');
+
+    let cards = '';
+    items.forEach(function (it, i) {
+        cards +=
+            '<div class="cz-char-card">' +
+                '<div class="cz-stroke" id="cz-stroke-' + i + '">' +
+                    '<span class="cz-stroke-fallback">' + it.ch + '</span>' +
+                '</div>' +
+                '<div class="cz-char-info">' +
+                    '<button class="cz-replay" data-key="' + i + '" title="Replay strokes">↻</button>' +
+                    '<span class="cz-role cz-role-' + it.role + '">' + roleLabel(it.role) + '</span>' +
+                    '<div class="cz-char-py" id="cz-py-' + i + '"></div>' +
+                    '<div class="cz-char-def" id="cz-def-' + i + '"></div>' +
+                    '<dl class="cz-char-meta" id="cz-meta-' + i + '"></dl>' +
+                '</div>' +
+            '</div>';
+    });
+    scroll.innerHTML = '<div class="cz-chardetail">' + cards + '</div>';
+
+    panelOpen = true;
+    requestAnimationFrame(function () {
+        panel.classList.add('is-open');
+    });
+
+    // Theme-aware stroke colours pulled from the panel's computed styles.
+    let cs = getComputedStyle(scroll);
+    let ink = cs.color || '#222';
+    let accent = (cs.getPropertyValue('--tone-1') || '').trim() || '#c0392b';
+    let colors = { ink: ink, accent: accent, outline: 'rgba(128,128,128,0.28)' };
+
+    items.forEach(function (it, i) {
+        fetchCharData(charCodepoint(it.ch)).then(function (data) {
+            renderCharCard(it.ch, i, data, colors);
+        });
+    });
+
+    // Replay buttons.
+    scroll.querySelectorAll('.cz-replay').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            let w = charWriters[btn.getAttribute('data-key')];
+            if (w) w.animateCharacter();
+        });
+    });
+}
+
+function renderCharCard(ch, key, data, colors) {
+    let target = document.getElementById('cz-stroke-' + key);
+    let meta = document.getElementById('cz-meta-' + key);
+    if (!target) return;
+
+    if (!data || !data.strokes) {
+        // No offline data for this character — leave the plain glyph fallback.
+        return;
+    }
+
+    // Stroke-order animation.
+    if (typeof HanziWriter !== 'undefined') {
+        target.innerHTML = '';
+        try {
+            let writer = HanziWriter.create(target, ch, {
+                width: 96,
+                height: 96,
+                padding: 4,
+                showCharacter: false,
+                showOutline: true,
+                strokeColor: colors.ink,
+                radicalColor: colors.accent,
+                outlineColor: colors.outline,
+                delayBetweenStrokes: 180,
+                strokeAnimationSpeed: 1,
+                charDataLoader: function () { return data; }
+            });
+            writer.loopCharacterAnimation();
+            charWriters[key] = writer;
+        } catch (e) {
+            // Leave the fallback glyph in place if rendering fails.
+        }
+    }
+
+    // Pinyin + definition.
+    if (data.pinyin && data.pinyin.length) {
+        let py = document.getElementById('cz-py-' + key);
+        if (py) py.textContent = data.pinyin.join(', ');
+    }
+    if (data.definition) {
+        let def = document.getElementById('cz-def-' + key);
+        if (def) def.textContent = data.definition;
+    }
+
+    // Radical / components / etymology.
+    if (!meta) return;
+    let rows = '';
+    if (data.radical) {
+        rows += '<div><dt>Radical</dt><dd><span class="cz-comp">' + data.radical + '</span></dd></div>';
+    }
+    if (data.decomposition && data.decomposition !== ch) {
+        // Strip Ideographic Description Characters (⿰⿱…, U+2FF0–U+2FFF), which
+        // most fonts render as "tofu"; show just the component glyphs.
+        let comps = data.decomposition.replace(/[⿰-⿿]/g, '');
+        if (comps) {
+            rows += '<div><dt>Components</dt><dd class="cz-decomp">' + comps + '</dd></div>';
+        }
+    }
+    let etym = formatEtymology(data.etymology);
+    if (etym) {
+        rows += '<div><dt>Origin</dt><dd>' + etym + '</dd></div>';
+    }
+    meta.innerHTML = rows;
+}
+
 function saveEntry(index) {
     if (index < 0 || index >= savedSearchResults.length) return;
     let r = savedSearchResults[index];
@@ -578,6 +784,12 @@ function onKeyDown(keyDown) {
 
         case 67: // 'c'
             copyToClipboard(getTextForClipboard());
+            break;
+
+        case 69: // 'e' — character detail: stroke order, decomposition, etymology
+            if (savedSearchResults.length > 0) {
+                openCharPanel(savedSearchResults[0][0], savedSearchResults[0][1]);
+            }
             break;
 
         case 66: // 'b'
@@ -1356,6 +1568,7 @@ function makeHtml(result, showToneColors) {
         html += '<span><kbd>Shift+R</kbd>save all</span>';
     }
     html += '<span><kbd>S</kbd>breakdown</span>';
+    html += '<span><kbd>E</kbd>characters</span>';
     html += '<span><kbd>C</kbd>copy</span>';
     html += '<span><kbd>N</kbd>next word</span>';
     html += '</div>';
@@ -1468,7 +1681,7 @@ let miniHelp = '<div class="cz-msg"><strong>Zhongwen Chinese-English Dictionary<
     + '<span><kbd>N</kbd>next word <kbd>B</kbd>prev char <kbd>M</kbd>next char</span>'
     + '<span><kbd>A</kbd>alt position <kbd>X</kbd>up <kbd>Y</kbd>down</span>'
     + '<span><kbd>R</kbd>remember <kbd>C</kbd>copy</span>'
-    + '<span><kbd>S</kbd>sentence <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
+    + '<span><kbd>S</kbd>sentence <kbd>E</kbd>characters <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
     + '<span><kbd>Shift+S</kbd>Skritter</span>'
     + '<span><kbd>Alt+W</kbd>word list</span>'
     + '<span><kbd>Alt+1</kbd>LINE <kbd>Alt+2</kbd>Forvo <kbd>Alt+3</kbd>Dict.cn</span>'
