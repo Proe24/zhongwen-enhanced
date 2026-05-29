@@ -738,6 +738,77 @@ function renderCharCard(ch, key, data, colors) {
     }
 }
 
+// ── Thesaurus Panel (synonyms) ───────────────────────────────────────
+//
+// Offline synonyms come from the Chinese Open Wordnet (CC BY 3.0) via the
+// background script. When a word isn't covered, we link out to an online
+// thesaurus instead (hybrid, offline-first).
+
+let lastThesaurusWord = '';
+
+function openThesaurusPanel(simplified, traditional) {
+    let word = simplified || traditional;
+    if (!word) return;
+    if (panelOpen && word === lastThesaurusWord) return;
+    lastThesaurusWord = word;
+
+    let panel = createPanel();
+    panel.setAttribute('data-direction', config.direction || 'vellum');
+    panel.setAttribute('data-mode', config.mode || 'light');
+    let title = document.getElementById('zhongwen-panel-title');
+    if (title) title.textContent = 'Thesaurus';
+    let scroll = document.getElementById('zhongwen-panel-scroll');
+
+    scroll.innerHTML =
+        '<div class="cz-thes-head"><span class="cz-thes-word">' + word + '</span></div>' +
+        '<div class="ai-status" id="zhongwen-thes-status">' +
+            '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
+            '<span>Looking up synonyms…</span>' +
+        '</div>';
+
+    panelOpen = true;
+    requestAnimationFrame(function () { panel.classList.add('is-open'); });
+
+    chrome.runtime.sendMessage({
+        type: 'thesaurus',
+        simplified: simplified,
+        traditional: traditional
+    }, function (response) {
+        if (!panelOpen || word !== lastThesaurusWord) return;
+        let synonyms = (response && response.synonyms) || [];
+        renderThesaurus(word, synonyms);
+    });
+}
+
+function renderThesaurus(word, synonyms) {
+    let scroll = document.getElementById('zhongwen-panel-scroll');
+    if (!scroll) return;
+
+    let html = '<div class="cz-thes-head"><span class="cz-thes-word">' + word + '</span></div>';
+
+    if (synonyms.length) {
+        html += '<div class="cz-thes-chips">';
+        for (let s of synonyms) {
+            html += '<span class="cz-thes-chip">' + s + '</span>';
+        }
+        html += '</div>';
+        html += '<div class="cz-thes-hint">Hover a word above for its definition.</div>';
+        html += '<div class="cz-thes-credit">Synonyms from the ' +
+            '<a href="https://bond-lab.github.io/cow/" target="_blank" rel="noreferrer noopener">' +
+            'Chinese Open Wordnet</a> (CC BY 3.0).</div>';
+    } else {
+        let q = encodeURIComponent(word);
+        html += '<div class="cz-thes-empty">No offline synonyms found for ' +
+            '<span class="cz-thes-word-sm">' + word + '</span>. Look it up on ' +
+            '<a href="https://hanyu.baidu.com/s?wd=' + q +
+            '" target="_blank" rel="noreferrer noopener">Baidu Hanyu</a> or ' +
+            '<a href="https://www.zdic.net/hans/' + q +
+            '" target="_blank" rel="noreferrer noopener">Zdic</a>.</div>';
+    }
+
+    scroll.innerHTML = html;
+}
+
 function saveEntry(index) {
     if (index < 0 || index >= savedSearchResults.length) return;
     let r = savedSearchResults[index];
@@ -804,6 +875,12 @@ function onKeyDown(keyDown) {
         case 69: // 'e' — character detail: stroke order, decomposition, etymology
             if (savedSearchResults.length > 0) {
                 openCharPanel(savedSearchResults[0][0], savedSearchResults[0][1]);
+            }
+            break;
+
+        case 76: // 'l' — thesaurus: synonyms (offline, with link fallback)
+            if (savedSearchResults.length > 0) {
+                openThesaurusPanel(savedSearchResults[0][0], savedSearchResults[0][1]);
             }
             break;
 
@@ -1584,6 +1661,7 @@ function makeHtml(result, showToneColors) {
     }
     html += '<span><kbd>S</kbd>breakdown</span>';
     html += '<span><kbd>E</kbd>characters</span>';
+    html += '<span><kbd>L</kbd>thesaurus</span>';
     html += '<span><kbd>C</kbd>copy</span>';
     html += '<span><kbd>N</kbd>next word</span>';
     html += '</div>';
@@ -1696,7 +1774,7 @@ let miniHelp = '<div class="cz-msg"><strong>Zhongwen Chinese-English Dictionary<
     + '<span><kbd>N</kbd>next word <kbd>B</kbd>prev char <kbd>M</kbd>next char</span>'
     + '<span><kbd>A</kbd>alt position <kbd>X</kbd>up <kbd>Y</kbd>down</span>'
     + '<span><kbd>R</kbd>remember <kbd>C</kbd>copy</span>'
-    + '<span><kbd>S</kbd>sentence <kbd>E</kbd>characters <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
+    + '<span><kbd>S</kbd>sentence <kbd>E</kbd>characters <kbd>L</kbd>thesaurus <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
     + '<span><kbd>Shift+S</kbd>Skritter</span>'
     + '<span><kbd>Alt+W</kbd>word list</span>'
     + '<span><kbd>Alt+1</kbd>LINE <kbd>Alt+2</kbd>Forvo <kbd>Alt+3</kbd>Dict.cn</span>'

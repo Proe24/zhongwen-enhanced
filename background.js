@@ -67,6 +67,8 @@ const OPTION_DEFAULTS = {
 let isActivated = false;
 let tabIDs = {};
 let dict;
+let thesaurus;        // word -> [synonyms], lazily loaded from data/thesaurus.json
+let thesaurusLoading; // in-flight load promise, so concurrent lookups share one fetch
 
 function getStorage(keys) {
     return new Promise(resolve => chrome.storage.local.get(keys, resolve));
@@ -173,6 +175,25 @@ async function loadDictData() {
 async function loadDictionary() {
     let [wordDict, wordIndex, grammarKeywords, vocabKeywords] = await loadDictData();
     return new ZhongwenDictionary(wordDict, wordIndex, grammarKeywords, vocabKeywords);
+}
+
+// Lazily load the offline thesaurus (Chinese Open Wordnet, CC BY 3.0).
+function loadThesaurus() {
+    if (thesaurus) return Promise.resolve(thesaurus);
+    if (!thesaurusLoading) {
+        thesaurusLoading = fetch(chrome.runtime.getURL('data/thesaurus.json'))
+            .then(r => r.json())
+            .then(data => { thesaurus = data; return thesaurus; })
+            .catch(() => { thesaurusLoading = null; return {}; });
+    }
+    return thesaurusLoading;
+}
+
+// Look up synonyms, preferring the simplified form then the traditional form.
+async function findSynonyms(simplified, traditional) {
+    let t = await loadThesaurus();
+    let syns = (simplified && t[simplified]) || (traditional && t[traditional]) || [];
+    return syns;
 }
 
 async function deactivateExtension() {
@@ -500,6 +521,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 
         case 'breakdown': {
             handleBreakdown(request, callback);
+            return true;
+        }
+
+        case 'thesaurus': {
+            findSynonyms(request.simplified, request.traditional)
+                .then(synonyms => callback({ synonyms: synonyms }))
+                .catch(() => callback({ synonyms: [] }));
             return true;
         }
     }

@@ -620,7 +620,9 @@
 
 .cz-popup {
   position: fixed;
-  z-index: 2147483640;
+  /* Above the side panel (.cz-side) so hovering words inside a panel
+     (e.g. thesaurus synonyms) shows the dictionary popup on top, not behind. */
+  z-index: 2147483646;
   min-width: 240px;
   max-width: 380px;
   padding: var(--pad-popup);
@@ -1028,6 +1030,60 @@
   text-decoration: underline;
 }
 .cz-char-note a:hover { color: var(--ink); }
+
+/* ── Thesaurus panel ─────────────────────────────────────────────────── */
+
+.cz-thes-head { margin-bottom: 18px; }
+.cz-thes-word {
+  font-family: var(--font-hanzi);
+  font-size: 32px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.cz-thes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cz-thes-chip {
+  font-family: var(--font-hanzi);
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--ink);
+  background: var(--bg-elevated);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--rad);
+  padding: 8px 14px;
+}
+.cz-thes-hint {
+  margin-top: 16px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.cz-thes-credit {
+  margin-top: 24px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+/* stylelint-disable no-descending-specificity -- scoped link styles, no real cascade conflict */
+.cz-thes-credit a,
+.cz-thes-empty a { color: var(--accent); text-decoration: underline; }
+.cz-thes-credit a:hover,
+.cz-thes-empty a:hover { color: var(--ink); }
+/* stylelint-enable no-descending-specificity */
+.cz-thes-empty {
+  font-family: var(--font-serif, var(--font-sans));
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.cz-thes-word-sm {
+  font-family: var(--font-hanzi);
+  color: var(--ink);
+}
 
 .translation-grid {
   display: grid;

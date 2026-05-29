@@ -33,3 +33,9 @@ and etymology) is built on:
 * **Make Me a Hanzi** by Shaunak Kishore and contributors — character
   decomposition and etymology data, and stroke graphics derived from the
   Arphic PL fonts. (https://github.com/skishore/makemeahanzi)
+
+The offline thesaurus (press **L**) uses synonym data from:
+
+* **Chinese Open Wordnet** by Shan Wang and Francis Bond — CC BY 3.0.
+  Wang, Shan and Francis Bond (2013), "Building the Chinese Open Wordnet
+  (COW): Starting from Core Synsets." (https://bond-lab.github.io/cow/)
