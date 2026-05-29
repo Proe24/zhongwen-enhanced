@@ -780,6 +780,16 @@ function openThesaurusPanel(simplified, traditional) {
     });
 }
 
+// Links to online thesauruses for a word, joined by `sep`.
+function thesaurusLinks(word, sep) {
+    let q = encodeURIComponent(word);
+    let baidu = '<a href="https://hanyu.baidu.com/s?wd=' + q +
+        '" target="_blank" rel="noreferrer noopener">Baidu Hanyu</a>';
+    let zdic = '<a href="https://www.zdic.net/hans/' + q +
+        '" target="_blank" rel="noreferrer noopener">Zdic</a>';
+    return baidu + sep + zdic;
+}
+
 function renderThesaurus(word, synonyms) {
     let scroll = document.getElementById('zhongwen-panel-scroll');
     if (!scroll) return;
@@ -793,17 +803,15 @@ function renderThesaurus(word, synonyms) {
         }
         html += '</div>';
         html += '<div class="cz-thes-hint">Hover a word above for its definition.</div>';
-        html += '<div class="cz-thes-credit">Synonyms from the ' +
+        // Offline data is partial, so always offer fuller online sources.
+        html += '<div class="cz-thes-more">More synonyms: ' + thesaurusLinks(word, ' · ') + '</div>';
+        html += '<div class="cz-thes-credit">Offline synonyms from the ' +
             '<a href="https://bond-lab.github.io/cow/" target="_blank" rel="noreferrer noopener">' +
             'Chinese Open Wordnet</a> (CC BY 3.0).</div>';
     } else {
-        let q = encodeURIComponent(word);
         html += '<div class="cz-thes-empty">No offline synonyms found for ' +
             '<span class="cz-thes-word-sm">' + word + '</span>. Look it up on ' +
-            '<a href="https://hanyu.baidu.com/s?wd=' + q +
-            '" target="_blank" rel="noreferrer noopener">Baidu Hanyu</a> or ' +
-            '<a href="https://www.zdic.net/hans/' + q +
-            '" target="_blank" rel="noreferrer noopener">Zdic</a>.</div>';
+            thesaurusLinks(word, ' or ') + '.</div>';
     }
 
     scroll.innerHTML = html;
