@@ -19,6 +19,7 @@
         mode: 'light',
         density: 'regular',
         hanziFont: 'serif',
+        defView: 'full',
         popupScale: '1',
         saveToWordList: 'allEntries',
         enabled: '0'

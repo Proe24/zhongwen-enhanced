@@ -25,6 +25,7 @@ async function loadVals() {
     document.querySelector(`input[name="mode"][value="${s.mode}"]`).checked = true;
     document.querySelector(`input[name="density"][value="${s.density}"]`).checked = true;
     document.querySelector(`input[name="hanziFont"][value="${s.hanziFont}"]`).checked = true;
+    document.querySelector(`input[name="defView"][value="${s.defView}"]`).checked = true;
 
     let slider = document.getElementById('popupScale');
     if (slider) {
@@ -145,6 +146,11 @@ window.addEventListener('load', () => {
     document.querySelectorAll('input[name="hanziFont"]').forEach((input) => {
         input.addEventListener('change',
             () => setThemeOption('hanziFont', input.getAttribute('value')));
+    });
+
+    document.querySelectorAll('input[name="defView"]').forEach((input) => {
+        input.addEventListener('change',
+            () => setOption('defView', input.getAttribute('value')));
     });
 
     let scaleSlider = document.getElementById('popupScale');

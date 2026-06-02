@@ -72,6 +72,23 @@
     </div>
 
     <div class="form-group mb-4">
+        <label>Definition detail</label>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="defViewFull" name="defView" class="custom-control-input"
+                   value="full">
+            <label class="custom-control-label" for="defViewFull">Full — show every meaning at
+                once</label>
+        </div>
+        <div class="custom-control custom-radio">
+            <input type="radio" id="defViewCompact" name="defView" class="custom-control-input"
+                   value="compact">
+            <label class="custom-control-label" for="defViewCompact">Compact — show only the most
+                common meaning; press <kbd>D</kbd> in the popup to cycle through the rest,
+                <kbd>F</kbd> for the full view</label>
+        </div>
+    </div>
+
+    <div class="form-group mb-4">
         <label for="popupScale">Popup size <span id="popupScaleValue" style="color:var(--ink-faint);font-family:var(--font-mono);margin-left:8px"></span></label>
         <div style="display:flex;align-items:center;gap:12px;max-width:480px">
             <span style="font-size:11px;color:var(--ink-faint)">70%</span>

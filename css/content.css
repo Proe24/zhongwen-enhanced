@@ -742,6 +742,17 @@
   color: var(--ink-soft);
   margin-right: 4px;
 }
+/* Collapsed state: a single faint "? shortcuts" affordance */
+.cz-popup .keys.keys-collapsed {
+  margin-top: 8px;
+  padding-top: 8px;
+  opacity: 0.6;
+}
+/* "? hide" sits at the far right of the expanded row */
+.cz-popup .keys .keys-hide {
+  margin-left: auto;
+  opacity: 0.7;
+}
 
 /* ── Entry separator (multiple dictionary matches) ────────────────────── */
 .cz-popup .entry + .entry {
@@ -763,6 +774,33 @@
   align-items: center;
   justify-content: center;
   margin-left: 6px;
+}
+
+/* ── Compact view "more meanings" hint ────────────────────────────────── */
+.cz-popup .cz-compact-more {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+.cz-popup .cz-compact-more .cz-compact-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+.cz-popup .cz-compact-more kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--ink-soft);
+  margin-right: 4px;
 }
 
 /* ── Message styling ──────────────────────────────────────────────────── */

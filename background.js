@@ -55,13 +55,13 @@ import { ZhongwenDictionary } from './dict.js';
 
 const OPTION_KEYS = [
     'tonecolors', 'skritterTLD', 'zhuyin', 'grammar', 'vocab', 'simpTrad',
-    'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'popupScale'
+    'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'defView', 'popupScale'
 ];
 const OPTION_DEFAULTS = {
     tonecolors: 'yes', skritterTLD: 'com', zhuyin: 'no', grammar: 'yes',
     vocab: 'yes', simpTrad: 'classic', toneColorScheme: 'standard',
     direction: 'vellum', mode: 'light', density: 'regular', hanziFont: 'serif',
-    popupScale: '1'
+    defView: 'full', popupScale: '1'
 };
 
 let isActivated = false;

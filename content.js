@@ -74,6 +74,14 @@ let timer;
 
 let altView = 0;
 
+// Compact view: show only one meaning at a time, cycled with the keyboard.
+let compactView = false;        // current view state (per session, seeded from config.defView)
+let compactPos = 0;             // index into compactFlat — resets to 0 (most common) on each new word
+let compactFlat = [];           // flat [entryIndex, senseIndex] pairs, in "senses then entries" order
+let showKeys = false;           // shortcut hints collapsed by default; '?' toggles them (per session)
+let configInitialized = false;  // so a session toggle survives tab-refocus 'enable' messages
+let lastResult = null;          // last search result, for re-rendering in place when cycling
+
 let savedSearchResults = [];
 
 let savedSelStartOffset = 0;
@@ -880,6 +888,30 @@ function onKeyDown(keyDown) {
             copyToClipboard(getTextForClipboard());
             break;
 
+        case 68: // 'd' — compact view: enter it, then cycle meanings (Shift+D goes back)
+            if (!compactView) {
+                compactView = true;
+                compactPos = 0;
+            } else if (compactFlat.length > 0) {
+                compactPos = keyDown.shiftKey
+                    ? (compactPos - 1 + compactFlat.length) % compactFlat.length
+                    : (compactPos + 1) % compactFlat.length;
+            }
+            rerenderPopup();
+            break;
+
+        case 70: // 'f' — return to the full view from compact
+            if (compactView) {
+                compactView = false;
+                rerenderPopup();
+            }
+            break;
+
+        case 191: // '?' / '/' — toggle the shortcut hints
+            showKeys = !showKeys;
+            rerenderPopup();
+            break;
+
         case 69: // 'e' — character detail: stroke order, decomposition, etymology
             if (savedSearchResults.length > 0) {
                 openCharPanel(savedSearchResults[0][0], savedSearchResults[0][1]);
@@ -1303,7 +1335,18 @@ function processSearchResult(result) {
         highlightMatch(doc, rangeNode, selStartOffset, highlightLength, selEndList);
     }
 
+    lastResult = result;
+    compactPos = 0;     // new word always starts at the most common meaning
     showPopup(makeHtml(result, config.tonecolors !== 'no'), savedTarget, popX, popY);
+}
+
+// Re-render the open popup in place (same position) — used when cycling/toggling
+// the compact view, which only changes the popup's contents, not where it sits.
+function rerenderPopup() {
+    let popup = document.getElementById('zhongwen-window');
+    if (popup && lastResult) {
+        popup.innerHTML = makeHtml(lastResult, config.tonecolors !== 'no');
+    }
 }
 
 // modifies selEndList as a side-effect
@@ -1595,8 +1638,8 @@ function toneColorHanzi(hanzi, pinyinStr, showToneColors) {
 function makeHtml(result, showToneColors) {
 
     let entry;
-    let html = '';
     let texts = [];
+    let entries = [];   // parsed per-entry data, reused by both full and compact views
 
     if (result === null) return '';
 
@@ -1608,75 +1651,144 @@ function makeHtml(result, showToneColors) {
         let traditional = entry[1];
         let rawPinyin = entry[3];
 
-        html += '<div class="entry">';
-        if (result.data.length > 1) {
-            html += '<span class="entry-num">' + (i + 1) + '</span>';
-        }
-        html += '<div class="head">';
-
-        // Hanzi
+        // Head (hanzi + pinyin + zhuyin) — identical markup for both views
+        let headHtml = '<div class="head">';
         if (config.simpTrad === 'auto') {
             let word = result.data[i][1];
-            html += '<div class="hanzi">' + toneColorHanzi(word, rawPinyin, showToneColors) + '</div>';
+            headHtml += '<div class="hanzi">' + toneColorHanzi(word, rawPinyin, showToneColors) + '</div>';
         } else {
-            html += '<div class="hanzi">';
-            html += toneColorHanzi(simplified, rawPinyin, showToneColors);
+            headHtml += '<div class="hanzi">';
+            headHtml += toneColorHanzi(simplified, rawPinyin, showToneColors);
             if (traditional !== simplified) {
-                html += '<span class="alt">' + toneColorHanzi(traditional, rawPinyin, showToneColors) + '</span>';
+                headHtml += '<span class="alt">' + toneColorHanzi(traditional, rawPinyin, showToneColors) + '</span>';
             }
-            html += '</div>';
+            headHtml += '</div>';
         }
-
-        // Pinyin
         let p = pinyinAndZhuyin(rawPinyin, showToneColors);
-        html += '<div class="pinyin">' + p[0] + '</div>';
-
-        // Zhuyin
+        headHtml += '<div class="pinyin">' + p[0] + '</div>';
         if (config.zhuyin === 'yes') {
-            html += '<span class="zhuyin">' + p[2] + '</span>';
+            headHtml += '<span class="zhuyin">' + p[2] + '</span>';
         }
+        headHtml += '</div>'; // .head
 
-        html += '</div>'; // .head
+        // Senses: CEDICT '/'-separated, ordered most-common first
+        let senses = entry[4].split('/').map(s => s.trim()).filter(Boolean);
+        let translation = senses.join('; ');
 
-        // Definition
-        let translation = entry[4].replace(/\//g, '; ');
-        html += '<p class="def">' + translation + '</p>';
-
-        // Grammar
-        if (config.grammar !== 'no' && result.grammar && result.grammar.index === i) {
-            html += '<div class="grammar">Press <kbd>G</kbd> for grammar and usage notes.</div>';
-        }
-
-        // Vocab
-        if (config.vocab !== 'no' && result.vocab && result.vocab.index === i) {
-            html += '<div class="grammar">Press <kbd>V</kbd> for vocabulary notes.</div>';
-        }
-
-        html += '</div>'; // .entry
+        entries.push({
+            index: i,
+            headHtml: headHtml,
+            senses: senses,
+            showGrammar: config.grammar !== 'no' && result.grammar && result.grammar.index === i,
+            showVocab: config.vocab !== 'no' && result.vocab && result.vocab.index === i
+        });
 
         texts[i] = [simplified, traditional, p[1], translation, rawPinyin];
+    }
+
+    savedSearchResults = texts;
+    savedSearchResults.grammar = result.grammar;
+    savedSearchResults.vocab = result.vocab;
+
+    // Flat cycle order: all senses of entry 0, then all senses of entry 1, …
+    compactFlat = [];
+    entries.forEach((e, ei) => e.senses.forEach((s, si) => compactFlat.push([ei, si])));
+
+    if (compactView && compactFlat.length > 0) {
+        return makeCompactHtml(entries);
+    }
+
+    let html = '';
+    for (let k = 0; k < entries.length; k++) {
+        let e = entries[k];
+        html += '<div class="entry">';
+        if (entries.length > 1) {
+            html += '<span class="entry-num">' + (e.index + 1) + '</span>';
+        }
+        html += e.headHtml;
+        html += '<p class="def">' + e.senses.join('; ') + '</p>';
+        if (e.showGrammar) {
+            html += '<div class="grammar">Press <kbd>G</kbd> for grammar and usage notes.</div>';
+        }
+        if (e.showVocab) {
+            html += '<div class="grammar">Press <kbd>V</kbd> for vocabulary notes.</div>';
+        }
+        html += '</div>'; // .entry
     }
 
     if (result.more) {
         html += '<div class="cz-msg">&hellip;</div>';
     }
 
-    html += '<div class="keys">';
-    html += '<span><kbd>R</kbd>save' + (result.data.length > 1 ? ' #1' : '') + '</span>';
-    if (result.data.length > 1) {
-        html += '<span><kbd>1</kbd>–<kbd>' + result.data.length + '</kbd>save #</span>';
-        html += '<span><kbd>Shift+R</kbd>save all</span>';
+    if (showKeys) {
+        html += '<div class="keys">';
+        html += '<span><kbd>R</kbd>save' + (entries.length > 1 ? ' #1' : '') + '</span>';
+        if (entries.length > 1) {
+            html += '<span><kbd>1</kbd>–<kbd>' + entries.length + '</kbd>save #</span>';
+            html += '<span><kbd>Shift+R</kbd>save all</span>';
+        }
+        html += '<span><kbd>D</kbd>compact</span>';
+        html += '<span><kbd>S</kbd>breakdown</span>';
+        html += '<span><kbd>E</kbd>characters</span>';
+        html += '<span><kbd>L</kbd>thesaurus</span>';
+        html += '<span><kbd>C</kbd>copy</span>';
+        html += '<span><kbd>N</kbd>next word</span>';
+        html += keysToggleHint();
+        html += '</div>';
+    } else {
+        html += keysCollapsedHint();
     }
-    html += '<span><kbd>S</kbd>breakdown</span>';
-    html += '<span><kbd>E</kbd>characters</span>';
-    html += '<span><kbd>L</kbd>thesaurus</span>';
-    html += '<span><kbd>C</kbd>copy</span>';
-    html += '<span><kbd>N</kbd>next word</span>';
+
+    return html;
+}
+
+// Collapsed shortcut affordance: a single subtle "? shortcuts" line.
+function keysCollapsedHint() {
+    return '<div class="keys keys-collapsed"><span><kbd>?</kbd>shortcuts</span></div>';
+}
+
+// Trailing item inside the expanded row so users learn '?' also hides it.
+function keysToggleHint() {
+    return '<span class="keys-hide"><kbd>?</kbd>hide</span>';
+}
+
+// Compact view: one meaning at a time. compactPos indexes into compactFlat,
+// which steps through every sense of the first entry before moving to the next.
+function makeCompactHtml(entries) {
+    let total = compactFlat.length;
+    if (compactPos >= total) compactPos = 0;
+    if (compactPos < 0) compactPos = total - 1;
+
+    let pair = compactFlat[compactPos];
+    let e = entries[pair[0]];
+    let sense = e.senses[pair[1]];
+
+    let html = '<div class="entry cz-compact">';
+    html += e.headHtml;
+    html += '<p class="def">' + sense + '</p>';
     html += '</div>';
 
-    savedSearchResults = texts;
-    savedSearchResults.grammar = result.grammar;
-    savedSearchResults.vocab = result.vocab;
+    if (total > 1) {
+        html += '<div class="cz-compact-more">'
+            + '<span class="cz-compact-count">' + (compactPos + 1) + ' / ' + total + '</span>'
+            + '<span><kbd>D</kbd> next meaning</span>'
+            + '</div>';
+    }
+
+    if (showKeys) {
+        html += '<div class="keys">';
+        html += '<span><kbd>R</kbd>save</span>';
+        html += '<span><kbd>F</kbd>full view</span>';
+        html += '<span><kbd>S</kbd>breakdown</span>';
+        html += '<span><kbd>E</kbd>characters</span>';
+        html += '<span><kbd>L</kbd>thesaurus</span>';
+        html += '<span><kbd>C</kbd>copy</span>';
+        html += '<span><kbd>N</kbd>next word</span>';
+        html += keysToggleHint();
+        html += '</div>';
+    } else {
+        html += keysCollapsedHint();
+    }
 
     return html;
 }
@@ -1783,6 +1895,8 @@ let miniHelp = '<div class="cz-msg"><strong>Zhongwen Chinese-English Dictionary<
     + '<span><kbd>A</kbd>alt position <kbd>X</kbd>up <kbd>Y</kbd>down</span>'
     + '<span><kbd>R</kbd>remember <kbd>C</kbd>copy</span>'
     + '<span><kbd>S</kbd>sentence <kbd>E</kbd>characters <kbd>L</kbd>thesaurus <kbd>G</kbd>grammar <kbd>V</kbd>vocab <kbd>T</kbd>Tatoeba</span>'
+    + '<span><kbd>D</kbd>compact / cycle meaning <kbd>F</kbd>full view</span>'
+    + '<span><kbd>?</kbd>toggle shortcut hints in the popup</span>'
     + '<span><kbd>Shift+S</kbd>Skritter</span>'
     + '<span><kbd>Alt+W</kbd>word list</span>'
     + '<span><kbd>Alt+1</kbd>LINE <kbd>Alt+2</kbd>Forvo <kbd>Alt+3</kbd>Dict.cn</span>'
@@ -1796,6 +1910,10 @@ chrome.runtime.onMessage.addListener(
             case 'enable':
                 enableTab();
                 config = request.config;
+                if (!configInitialized) {
+                    compactView = config.defView === 'compact';
+                    configInitialized = true;
+                }
                 break;
             case 'disable':
                 disableTab();
