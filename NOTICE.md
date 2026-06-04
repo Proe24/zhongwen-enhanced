@@ -43,6 +43,12 @@ the source files as required by the license.
 This extension bundles the following independently-licensed components,
 whose own licenses apply to those files:
 
+- **jQuery** (`js/jquery-3.7.1.min.js`) — JavaScript library by the
+  jQuery Foundation and contributors. MIT License.
+  <https://jquery.org/license/>
+- **Bootstrap** (`css/bootstrap.min.css`, `js/bootstrap.min.js`) — CSS/JS
+  UI toolkit by The Bootstrap Authors. MIT License.
+  <https://github.com/twbs/bootstrap/blob/main/LICENSE>
 - **Hanzi Writer** (`js/hanzi-writer.min.js`) — stroke-order rendering
   library by Jason Kennaly and contributors. MIT License.
   <https://hanziwriter.org/>
