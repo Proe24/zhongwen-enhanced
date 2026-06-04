@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Zhongwen Enhanced</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 46rem; margin: 2.5rem auto; padding: 0 1.25rem;
+    font: 16px/1.6 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 1.7rem; margin-bottom: .25rem; }
+  h2 { margin-top: 2rem; font-size: 1.2rem; }
+  code { background: rgba(127,127,127,.18); padding: .1em .35em; border-radius: 4px; }
+  .updated { color: #888; font-size: .9rem; margin-top: 0; }
+  a { color: #2563eb; }
+</style>
+</head>
+<body>
+<h1>Privacy Policy — Zhongwen Enhanced</h1>
+<p class="updated">Last updated: 2026-06-04</p>
+
+<p>Zhongwen Enhanced is a browser extension that provides a Chinese-English
+pop-up dictionary and Chinese-learning tools. This policy explains what data
+the extension handles and how.</p>
+
+<h2>Summary</h2>
+<ul>
+  <li>The extension does <strong>not</strong> have its own servers and does
+      <strong>not</strong> collect, transmit, or sell your personal data to the
+      developer.</li>
+  <li>Dictionary lookups happen <strong>entirely on your device</strong> using a
+      bundled offline dictionary (CC-CEDICT).</li>
+  <li>Your word lists, settings, and API keys are stored <strong>locally in your
+      browser</strong> (<code>chrome.storage.local</code>).</li>
+  <li>Text is sent to a third-party AI service <strong>only</strong> when you
+      explicitly use the optional "Break down sentence" feature, and only to the
+      provider you selected, using your own API key.</li>
+</ul>
+
+<h2>Data stored locally on your device</h2>
+<p>The following are saved only in your browser's local extension storage and are
+never sent to the developer:</p>
+<ul>
+  <li>Your saved words, sentences, vocabulary lists, notes, and study progress.</li>
+  <li>Your preferences/options (theme, fonts, display settings, etc.).</li>
+  <li>The API key(s) you optionally enter for AI providers.</li>
+</ul>
+<p>You can remove this data at any time by clearing the extension's data or
+uninstalling the extension.</p>
+
+<h2>Optional AI sentence breakdown (third-party processing)</h2>
+<p>The extension includes an optional feature that produces a grammatical
+breakdown of a Chinese sentence using an AI model. This feature is
+<strong>off by default</strong> and only runs when you actively trigger it (for
+example via the right-click "Break down sentence" menu item).</p>
+<p>When you use this feature:</p>
+<ul>
+  <li>The selected text is sent directly from your browser to the AI provider
+      <strong>you</strong> have configured. Supported providers are:
+    <ul>
+      <li>Anthropic (Claude) — <a href="https://www.anthropic.com/legal/privacy">privacy policy</a></li>
+      <li>Google (Gemini) — <a href="https://policies.google.com/privacy">privacy policy</a></li>
+      <li>OpenAI — <a href="https://openai.com/policies/privacy-policy">privacy policy</a></li>
+    </ul>
+  </li>
+  <li>The request is authenticated with the API key you supplied for that
+      provider. Your key and your text are sent only to that provider's API
+      endpoint, not to the extension developer.</li>
+  <li>The provider's own privacy policy and terms govern how they handle the
+      submitted text. Please review the relevant policy above.</li>
+</ul>
+<p>If you never enter an API key or never use the breakdown feature, no text or
+data leaves your device through this extension.</p>
+
+<h2>Permissions</h2>
+<ul>
+  <li><code>storage</code> — to save your word lists, settings, and API keys locally.</li>
+  <li><code>tabs</code> / <code>contextMenus</code> — to enable the dictionary on
+      the active tab and provide right-click menu actions.</li>
+  <li>Access to web pages (<code>&lt;all_urls&gt;</code>) — required so the pop-up
+      dictionary can read the text you hover over on any page you visit. Page
+      content is processed locally and is not transmitted, except as described in
+      the optional AI feature above.</li>
+  <li>Host access to the AI provider API endpoints — used only to send requests
+      for the optional breakdown feature.</li>
+</ul>
+
+<h2>Changes to this policy</h2>
+<p>If this policy changes, the updated version will be posted in the project
+repository at
+<a href="https://github.com/Proe24/zhongwen-enhanced">github.com/Proe24/zhongwen-enhanced</a>.</p>
+
+<h2>Contact</h2>
+<p>Questions can be raised via the project's issue tracker:
+<a href="https://github.com/Proe24/zhongwen-enhanced/issues">github.com/Proe24/zhongwen-enhanced/issues</a>.</p>
+</body>
+</html>

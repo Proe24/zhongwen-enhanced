@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Zhongwen Enhanced: Chinese-English Dictionary",
   "short_name": "Zhongwen Enhanced",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Stephen Underwood",
   "homepage_url": "https://github.com/Proe24/zhongwen-enhanced",
   "description": "Chinese pop-up dictionary with AI sentence breakdown, vocab lists, and Anki/Pleco export. Based on the open-source Zhongwen project.",
