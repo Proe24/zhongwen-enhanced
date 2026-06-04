@@ -732,7 +732,8 @@
   color: var(--ink-faint);
   letter-spacing: 0.02em;
 }
-.cz-popup .keys kbd {
+.cz-popup .keys kbd,
+.cz-popup .cz-compact-more kbd {
   font-family: var(--font-mono);
   font-size: 10px;
   background: var(--bg-overlay);
@@ -791,16 +792,6 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ink-soft);
-}
-.cz-popup .cz-compact-more kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--rule-soft);
-  border-radius: 3px;
-  padding: 1px 5px;
-  color: var(--ink-soft);
-  margin-right: 4px;
 }
 
 /* ── Message styling ──────────────────────────────────────────────────── */

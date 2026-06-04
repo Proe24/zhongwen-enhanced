@@ -88,8 +88,11 @@ let compactView = false;        // current view state (per session, seeded from 
 let compactPos = 0;             // index into compactFlat — resets to 0 (most common) on each new word
 let compactFlat = [];           // flat [entryIndex, senseIndex] pairs, in "senses then entries" order
 let showKeys = false;           // shortcut hints collapsed by default; '?' toggles them (per session)
-let configInitialized = false;  // so a session toggle survives tab-refocus 'enable' messages
-let lastResult = null;          // last search result, for re-rendering in place when cycling
+let userToggledView = false;    // set once the user presses D/F, so a manual choice isn't overridden on refocus
+let lastEntries = [];           // parsed entries for the shown word, so cycling re-renders without re-parsing
+let lastMore = false;           // whether the shown result was truncated ("…")
+let lastResultKey = null;       // identity of the shown word, to reset the cycle only on a genuinely new word
+let popupShowsResult = false;   // true only while the popup shows a dictionary entry (not a message/help)
 
 let savedSearchResults = [];
 
@@ -898,6 +901,8 @@ function onKeyDown(keyDown) {
             break;
 
         case 68: // 'd' — compact view: enter it, then cycle meanings (Shift+D goes back)
+            if (!popupShowsResult) break;   // ignore when the popup is a message/help, not an entry
+            userToggledView = true;
             if (!compactView) {
                 compactView = true;
                 compactPos = 0;
@@ -910,13 +915,16 @@ function onKeyDown(keyDown) {
             break;
 
         case 70: // 'f' — return to the full view from compact
+            if (!popupShowsResult) break;
             if (compactView) {
+                userToggledView = true;
                 compactView = false;
                 rerenderPopup();
             }
             break;
 
-        case 191: // '?' / '/' — toggle the shortcut hints
+        case 191: // '?' / '/' — toggle the shortcut hints (both keys, Shift optional)
+            if (!popupShowsResult) break;
             showKeys = !showKeys;
             rerenderPopup();
             break;
@@ -1347,18 +1355,27 @@ function processSearchResult(result) {
         highlightMatch(doc, rangeNode, selStartOffset, highlightLength, selEndList);
     }
 
-    lastResult = result;
-    compactPos = 0;     // new word always starts at the most common meaning
-    showPopup(makeHtml(result, config.tonecolors !== 'no'), savedTarget, popX, popY);
+    // Reset the meaning cycle only on a genuinely new word — not when the same
+    // word is re-shown by a positioning key (A/X/Y), which also re-runs the search.
+    let resultKey = (result.data && result.data.length) ? result.data[0][0] : '';
+    if (resultKey !== lastResultKey) {
+        compactPos = 0;
+        lastResultKey = resultKey;
+    }
+
+    parseResult(result, config.tonecolors !== 'no');
+    showPopup(renderEntries(), savedTarget, popX, popY);
+    popupShowsResult = true;
 }
 
-// Re-render the open popup in place (same position) — used when cycling/toggling
-// the compact view, which only changes the popup's contents, not where it sits.
+// Re-render the open popup in place — used when cycling/toggling the compact view
+// or the shortcut hints. Re-parses nothing (reuses lastEntries) and re-runs the
+// placement so a height change (compact↔full, hints on/off) can't strand or clip it.
 function rerenderPopup() {
     let popup = document.getElementById('zhongwen-window');
-    if (popup && lastResult) {
-        popup.innerHTML = makeHtml(lastResult, config.tonecolors !== 'no');
-    }
+    if (!popup || !popupShowsResult || !lastEntries.length) return;
+    popup.innerHTML = renderEntries();
+    placePopup(popup, savedTarget);
 }
 
 // modifies selEndList as a side-effect
@@ -1407,6 +1424,10 @@ function showPopup(html, elem, x, y) {
         x = y = 0;
     }
 
+    // A bare showPopup shows a message/help; processSearchResult sets this true
+    // afterwards for real entries. Gates the D/F/? keys (see onKeyDown).
+    popupShowsResult = false;
+
     let popup = document.getElementById('zhongwen-window');
 
     if (!popup) {
@@ -1437,66 +1458,79 @@ function showPopup(html, elem, x, y) {
     if (elem) {
         popup.classList.remove('is-visible');
         popup.style.display = '';
-        popup.style.left = '0px';
-        popup.style.top = '-9999px';
-
-        let pW = popup.offsetWidth;
-        let pH = popup.offsetHeight;
-
-        if (pW <= 0) pW = 240;
-        if (pH <= 0) pH = 80;
-
-        if (altView === 1) {
-            x = 0;
-            y = 0;
-        } else if (altView === 2) {
-            x = window.innerWidth - pW - 20;
-            y = window.innerHeight - pH - 20;
-        } else if (elem instanceof window.HTMLOptionElement) {
-            let rect = elem.parentNode.getBoundingClientRect();
-            x = rect.right + 5;
-            y = rect.top;
-            if (x + pW > window.innerWidth) {
-                x = rect.left - pW - 5;
-                if (x < 0) x = 0;
-            }
-        } else {
-            if (wordRect) {
-                // Anchor to the highlighted word so the gap is consistent and the
-                // popup follows the word during keyboard navigation, not the mouse.
-                let gap = 8;
-                x = wordRect.left;
-                let below = wordRect.bottom + gap;
-                let above = wordRect.top - gap - pH;
-                // Prefer below; flip above only when below overflows and above fits.
-                y = (below + pH > window.innerHeight && above >= 0) ? above : below;
-            } else {
-                // Fallback (e.g. form fields): anchor to the mouse cursor.
-                let v = 25;
-                if (y + v + pH > window.innerHeight) {
-                    let t = y - pH - 30;
-                    if (t >= 0) y = t;
-                } else {
-                    y += v;
-                }
-            }
-
-            y += popYOffset;   // honor manual X / Y nudges
-
-            if (x + pW > window.innerWidth - 20) {
-                x = (window.innerWidth - pW) - 20;
-                if (x < 0) x = 0;
-            }
-        }
-    }
-
-    if (x !== -1 && y !== -1) {
+        placePopup(popup, elem);
+    } else if (x !== -1 && y !== -1) {
         popup.style.left = (x / scale) + 'px';
         popup.style.top = (y / scale) + 'px';
     }
+
     popup.style.display = '';
     popup.offsetHeight;
     popup.classList.add('is-visible');
+}
+
+// Measure the (already-populated) popup and set its left/top. Shared by the
+// initial show and by rerenderPopup so re-rendered content is always re-placed
+// with the same edge-aware logic. Anchors to the highlighted word when possible.
+function placePopup(popup, elem) {
+    let scale = parseFloat(config.popupScale);
+    if (isNaN(scale) || scale <= 0) scale = 1;
+
+    popup.style.left = '0px';
+    popup.style.top = '-9999px';
+
+    let pW = popup.offsetWidth;
+    let pH = popup.offsetHeight;
+    if (pW <= 0) pW = 240;
+    if (pH <= 0) pH = 80;
+
+    let x, y;
+    if (altView === 1) {
+        x = 0;
+        y = 0;
+    } else if (altView === 2) {
+        x = window.innerWidth - pW - 20;
+        y = window.innerHeight - pH - 20;
+    } else if (elem instanceof window.HTMLOptionElement) {
+        let rect = elem.parentNode.getBoundingClientRect();
+        x = rect.right + 5;
+        y = rect.top;
+        if (x + pW > window.innerWidth) {
+            x = rect.left - pW - 5;
+        }
+        y += popYOffset;
+    } else if (wordRect) {
+        // Anchor to the highlighted word so the gap is consistent and the
+        // popup follows the word during keyboard navigation, not the mouse.
+        let gap = 8;
+        x = wordRect.left;
+        let below = wordRect.bottom + gap;
+        let above = wordRect.top - gap - pH;
+        // Prefer below; flip above only when below overflows and above fits.
+        y = (below + pH > window.innerHeight && above >= 0) ? above : below;
+        y += popYOffset;
+    } else {
+        // Fallback (e.g. form fields): anchor to the mouse cursor.
+        x = popX;
+        y = popY;
+        let v = 25;
+        if (y + v + pH > window.innerHeight) {
+            let t = y - pH - 30;
+            if (t >= 0) y = t;
+        } else {
+            y += v;
+        }
+        y += popYOffset;
+    }
+
+    // Keep the popup on screen on both axes (covers tall popups and X/Y nudges).
+    if (x + pW > window.innerWidth - 20) x = window.innerWidth - pW - 20;
+    if (x < 0) x = 0;
+    if (y + pH > window.innerHeight - 8) y = window.innerHeight - pH - 8;
+    if (y < 0) y = 0;
+
+    popup.style.left = (x / scale) + 'px';
+    popup.style.top = (y / scale) + 'px';
 }
 
 function hidePopup() {
@@ -1667,13 +1701,14 @@ function toneColorHanzi(hanzi, pinyinStr, showToneColors) {
     return html;
 }
 
-function makeHtml(result, showToneColors) {
+// Parse a search result into per-entry render data ONCE, and publish the derived
+// state (savedSearchResults, compactFlat, lastEntries) that callers depend on.
+// Rendering is separate (renderEntries) so cycling/toggling doesn't re-parse.
+function parseResult(result, showToneColors) {
 
     let entry;
     let texts = [];
-    let entries = [];   // parsed per-entry data, reused by both full and compact views
-
-    if (result === null) return '';
+    let entries = [];
 
     for (let i = 0; i < result.data.length; ++i) {
         entry = result.data[i][0].match(/^([^\s]+?)\s+([^\s]+?)\s+\[(.*?)\]?\s*\/(.+)\//);
@@ -1726,8 +1761,17 @@ function makeHtml(result, showToneColors) {
     compactFlat = [];
     entries.forEach((e, ei) => e.senses.forEach((s, si) => compactFlat.push([ei, si])));
 
+    lastEntries = entries;
+    lastMore = !!result.more;
+}
+
+// Render the current view (full or compact) from the already-parsed lastEntries.
+function renderEntries() {
+    let entries = lastEntries;
+    if (!entries.length) return '';
+
     if (compactView && compactFlat.length > 0) {
-        return makeCompactHtml(entries);
+        return renderCompact(entries);
     }
 
     let html = '';
@@ -1748,45 +1792,25 @@ function makeHtml(result, showToneColors) {
         html += '</div>'; // .entry
     }
 
-    if (result.more) {
+    if (lastMore) {
         html += '<div class="cz-msg">&hellip;</div>';
     }
 
-    if (showKeys) {
-        html += '<div class="keys">';
-        html += '<span><kbd>R</kbd>save' + (entries.length > 1 ? ' #1' : '') + '</span>';
-        if (entries.length > 1) {
-            html += '<span><kbd>1</kbd>–<kbd>' + entries.length + '</kbd>save #</span>';
-            html += '<span><kbd>Shift+R</kbd>save all</span>';
-        }
-        html += '<span><kbd>D</kbd>compact</span>';
-        html += '<span><kbd>S</kbd>breakdown</span>';
-        html += '<span><kbd>E</kbd>characters</span>';
-        html += '<span><kbd>L</kbd>thesaurus</span>';
-        html += '<span><kbd>C</kbd>copy</span>';
-        html += '<span><kbd>N</kbd>next word</span>';
-        html += keysToggleHint();
-        html += '</div>';
-    } else {
-        html += keysCollapsedHint();
+    let items = ['<kbd>R</kbd>save' + (entries.length > 1 ? ' #1' : '')];
+    if (entries.length > 1) {
+        items.push('<kbd>1</kbd>–<kbd>' + entries.length + '</kbd>save #');
+        items.push('<kbd>Shift+R</kbd>save all');
     }
+    items.push('<kbd>D</kbd>compact', '<kbd>S</kbd>breakdown', '<kbd>E</kbd>characters',
+        '<kbd>L</kbd>thesaurus', '<kbd>C</kbd>copy', '<kbd>N</kbd>next word');
+    html += keysRow(items);
 
     return html;
 }
 
-// Collapsed shortcut affordance: a single subtle "? shortcuts" line.
-function keysCollapsedHint() {
-    return '<div class="keys keys-collapsed"><span><kbd>?</kbd>shortcuts</span></div>';
-}
-
-// Trailing item inside the expanded row so users learn '?' also hides it.
-function keysToggleHint() {
-    return '<span class="keys-hide"><kbd>?</kbd>hide</span>';
-}
-
 // Compact view: one meaning at a time. compactPos indexes into compactFlat,
 // which steps through every sense of the first entry before moving to the next.
-function makeCompactHtml(entries) {
+function renderCompact(entries) {
     let total = compactFlat.length;
     if (compactPos >= total) compactPos = 0;
     if (compactPos < 0) compactPos = total - 1;
@@ -1807,21 +1831,24 @@ function makeCompactHtml(entries) {
             + '</div>';
     }
 
-    if (showKeys) {
-        html += '<div class="keys">';
-        html += '<span><kbd>R</kbd>save</span>';
-        html += '<span><kbd>F</kbd>full view</span>';
-        html += '<span><kbd>S</kbd>breakdown</span>';
-        html += '<span><kbd>E</kbd>characters</span>';
-        html += '<span><kbd>L</kbd>thesaurus</span>';
-        html += '<span><kbd>C</kbd>copy</span>';
-        html += '<span><kbd>N</kbd>next word</span>';
-        html += keysToggleHint();
-        html += '</div>';
-    } else {
-        html += keysCollapsedHint();
-    }
+    html += keysRow(['<kbd>R</kbd>save', '<kbd>F</kbd>full view', '<kbd>S</kbd>breakdown',
+        '<kbd>E</kbd>characters', '<kbd>L</kbd>thesaurus', '<kbd>C</kbd>copy', '<kbd>N</kbd>next word']);
 
+    return html;
+}
+
+// Shortcut hints row: collapsed to a single "? shortcuts" affordance by default;
+// the expanded row lists `items` (each an inner-HTML string) plus a "? hide" toggle.
+function keysRow(items) {
+    if (!showKeys) {
+        return '<div class="keys keys-collapsed"><span><kbd>?</kbd>shortcuts</span></div>';
+    }
+    let html = '<div class="keys">';
+    for (let i = 0; i < items.length; i++) {
+        html += '<span>' + items[i] + '</span>';
+    }
+    html += '<span class="keys-hide"><kbd>?</kbd>hide</span>';
+    html += '</div>';
     return html;
 }
 
@@ -1942,9 +1969,10 @@ chrome.runtime.onMessage.addListener(
             case 'enable':
                 enableTab();
                 config = request.config;
-                if (!configInitialized) {
+                // Follow the saved default (this also picks up a settings change on
+                // tab refocus), unless the user has manually toggled the view this session.
+                if (!userToggledView) {
                     compactView = config.defView === 'compact';
-                    configInitialized = true;
                 }
                 break;
             case 'disable':
