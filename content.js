@@ -70,6 +70,15 @@ let popX = 0;
 
 let popY = 0;
 
+// Viewport rect of the currently highlighted word, used to anchor the popup
+// to the word itself (consistent gap above/below) rather than the mouse cursor.
+// Null when there is no highlight (e.g. inside form fields) — then we fall back
+// to mouse-based positioning.
+let wordRect = null;
+
+// Manual vertical nudge applied with the X / Y keys; reset on each new hover.
+let popYOffset = 0;
+
 let timer;
 
 let altView = 0;
@@ -1046,15 +1055,15 @@ function onKeyDown(keyDown) {
             }
             break;
 
-        case 88: // 'x'
+        case 88: // 'x' — nudge popup up
             altView = 0;
-            popY -= 20;
+            popYOffset -= 20;
             triggerSearch();
             break;
 
-        case 89: // 'y'
+        case 89: // 'y' — nudge popup down
             altView = 0;
-            popY += 20;
+            popYOffset += 20;
             triggerSearch();
             break;
 
@@ -1228,6 +1237,7 @@ function onMouseMove(mouseMove) {
     if (rangeNode && rangeNode.data && rangeOffset < rangeNode.data.length) {
         popX = mouseMove.clientX;
         popY = mouseMove.clientY;
+        popYOffset = 0;   // new hover clears any X/Y nudge from the previous word
         timer = setTimeout(() => triggerSearch(), 50);
         return;
     }
@@ -1308,6 +1318,8 @@ function processSearchResult(result) {
         clearHighlight();
         return;
     }
+
+    wordRect = null;   // recomputed by highlightMatch below; stays null inside form fields
 
     let highlightLength;
     let index = 0;
@@ -1449,17 +1461,31 @@ function showPopup(html, elem, x, y) {
                 if (x < 0) x = 0;
             }
         } else {
+            if (wordRect) {
+                // Anchor to the highlighted word so the gap is consistent and the
+                // popup follows the word during keyboard navigation, not the mouse.
+                let gap = 8;
+                x = wordRect.left;
+                let below = wordRect.bottom + gap;
+                let above = wordRect.top - gap - pH;
+                // Prefer below; flip above only when below overflows and above fits.
+                y = (below + pH > window.innerHeight && above >= 0) ? above : below;
+            } else {
+                // Fallback (e.g. form fields): anchor to the mouse cursor.
+                let v = 25;
+                if (y + v + pH > window.innerHeight) {
+                    let t = y - pH - 30;
+                    if (t >= 0) y = t;
+                } else {
+                    y += v;
+                }
+            }
+
+            y += popYOffset;   // honor manual X / Y nudges
+
             if (x + pW > window.innerWidth - 20) {
                 x = (window.innerWidth - pW) - 20;
                 if (x < 0) x = 0;
-            }
-
-            let v = 25;
-            if (y + v + pH > window.innerHeight) {
-                let t = y - pH - 30;
-                if (t >= 0) y = t;
-            } else {
-                y += v;
             }
         }
     }
@@ -1506,6 +1532,12 @@ function highlightMatch(doc, rangeStartNode, rangeStartOffset, matchLen, selEndL
     sel.empty();
     sel.addRange(range);
     selText = sel.toString();
+
+    // Anchor point for the popup: the on-screen box of the highlighted word.
+    // Use the first line box so a word that wraps doesn't yield a tall union rect.
+    let rects = range.getClientRects();
+    let r = (rects && rects.length) ? rects[0] : range.getBoundingClientRect();
+    wordRect = (r && (r.width || r.height)) ? r : null;
 }
 
 function clearHighlight() {
