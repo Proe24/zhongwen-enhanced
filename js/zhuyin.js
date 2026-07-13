@@ -1,5 +1,3 @@
-/* global globalThis */
-
 const zhuyinTones = ['?', '', '\u02CA', '\u02C7', '\u02CB', '\u30FB'];
 
 const pinyinTones = {

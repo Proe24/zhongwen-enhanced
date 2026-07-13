@@ -1239,7 +1239,7 @@
 }
 .grammar-notes ul { margin: 6px 0 0; padding: 0 0 0 18px; }
 .grammar-notes li { margin: 4px 0; }
-.grammar-notes strong { font-weight: 600; color: var(--accent); }
+.cz-side .grammar-notes strong { font-weight: 600; color: var(--accent); }
 
 .ai-status {
   display: flex;

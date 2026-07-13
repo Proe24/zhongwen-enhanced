@@ -28,59 +28,131 @@
 
     let migrationPromise = null;
 
+    function getLocal(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, result => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(result || {});
+                }
+            });
+        });
+    }
+
+    function setLocal(obj) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(obj, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    function removeLocal(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.remove(keys, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    function parseWordlist(value) {
+        let entries = value ? JSON.parse(value) : [];
+        if (!Array.isArray(entries)) throw new Error('Saved word list has an invalid format.');
+        return entries;
+    }
+
+    function mergeWordlists(legacyValue, currentValue) {
+        let legacyEntries = parseWordlist(legacyValue);
+        let currentEntries = parseWordlist(currentValue);
+        return JSON.stringify(legacyEntries.concat(currentEntries));
+    }
+
+    function withStorageLock(task) {
+        let locks = globalThis.navigator && globalThis.navigator.locks;
+        if (!locks || typeof locks.request !== 'function') {
+            return Promise.resolve().then(task);
+        }
+        return locks.request('zhongwen-storage', task);
+    }
+
     function migrate() {
         if (migrationPromise) return migrationPromise;
-        migrationPromise = new Promise(resolve => {
-            chrome.storage.local.get('mv3Migrated', result => {
-                if (result.mv3Migrated) { resolve(); return; }
-                let toWrite = { mv3Migrated: true };
-                try {
-                    MIGRATABLE_KEYS.forEach(k => {
-                        let v = localStorage[k];
-                        if (v !== undefined) toWrite[k] = v;
-                    });
-                } catch (e) { /* localStorage unavailable */ }
-                chrome.storage.local.set(toWrite, () => {
-                    try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) {}
-                    resolve();
+        migrationPromise = withStorageLock(async function () {
+            let result = await getLocal(['mv3Migrated'].concat(MIGRATABLE_KEYS));
+            if (result.mv3Migrated) return;
+            let toWrite = { mv3Migrated: true };
+            let migratedKeys = [];
+            let legacyValues = {};
+            try {
+                let availableLegacyValues = {};
+                MIGRATABLE_KEYS.forEach(k => {
+                    let legacyValue = localStorage[k];
+                    if (legacyValue !== undefined) availableLegacyValues[k] = legacyValue;
                 });
+                legacyValues = availableLegacyValues;
+            } catch (e) { /* localStorage unavailable */ }
+            MIGRATABLE_KEYS.forEach(k => {
+                if (!Object.prototype.hasOwnProperty.call(legacyValues, k)) return;
+                let legacyValue = legacyValues[k];
+                if (k === 'wordlist' && result.wordlist !== undefined) {
+                    toWrite.wordlist = mergeWordlists(legacyValue, result.wordlist);
+                } else if (result[k] === undefined) {
+                    toWrite[k] = legacyValue;
+                }
+                migratedKeys.push(k);
             });
+            await setLocal(toWrite);
+            try { migratedKeys.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
+        }).catch(error => {
+            // A transient failure must not poison every later storage request
+            // for the lifetime of the extension page.
+            migrationPromise = null;
+            throw error;
         });
         return migrationPromise;
     }
 
     function get(keys) {
-        return migrate().then(() => new Promise(resolve => {
+        return migrate().then(() => {
             let queryKeys = Array.isArray(keys) ? keys : (keys ? [keys] : Object.keys(DEFAULTS));
-            chrome.storage.local.get(queryKeys, result => {
+            return getLocal(queryKeys).then(result => {
                 let out = {};
                 queryKeys.forEach(k => {
                     out[k] = result[k] !== undefined ? result[k] : DEFAULTS[k];
                 });
-                resolve(out);
+                return out;
             });
-        }));
+        });
     }
 
     function set(key, value) {
-        return migrate().then(() => new Promise(resolve => {
+        return migrate().then(() => {
             let obj = {};
             obj[key] = value;
-            chrome.storage.local.set(obj, resolve);
-        }));
+            return setLocal(obj);
+        });
     }
 
     function getRaw(keys) {
-        return migrate().then(() => new Promise(resolve => {
-            chrome.storage.local.get(keys, resolve);
-        }));
+        return migrate().then(() => getLocal(keys));
     }
 
     function setRaw(obj) {
-        return migrate().then(() => new Promise(resolve => {
-            chrome.storage.local.set(obj, resolve);
-        }));
+        return migrate().then(() => setLocal(obj));
     }
 
-    globalThis.zhongwenStorage = { get, set, getRaw, setRaw, migrate, DEFAULTS };
+    function removeRaw(keys) {
+        return migrate().then(() => removeLocal(keys));
+    }
+
+    globalThis.zhongwenStorage = { get, set, getRaw, setRaw, removeRaw, migrate, DEFAULTS };
 })();

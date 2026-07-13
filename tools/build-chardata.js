@@ -14,21 +14,29 @@
  *
  * Prerequisites:
  *   npm install                                                   # fetches hanzi-writer-data
- *   curl -sL -o tools/mmh-dictionary.txt \
- *     https://raw.githubusercontent.com/skishore/makemeahanzi/master/dictionary.txt
+ *   curl -fL -o tools/mmh-dictionary.txt \
+ *     https://raw.githubusercontent.com/skishore/makemeahanzi/bddc96d41bef78427ed0e034e9f7e31d71fd1b92/dictionary.txt
+ *   sha256: 744bb05d5b0742e9ee35c37791f94d56a173349b3367569e7ca11e510364d203
  *
  * Run:  node tools/build-chardata.js
  */
+
+/* eslint-env node */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const STROKE_DIR = path.join(ROOT, 'node_modules', 'hanzi-writer-data');
 const DICT_FILE = path.join(__dirname, 'mmh-dictionary.txt');
 const OUT_DIR = path.join(ROOT, 'data', 'chardata');
+const EXPECTED_DICT_SHA256 = '744bb05d5b0742e9ee35c37791f94d56a173349b3367569e7ca11e510364d203';
+const EXPECTED_STROKE_VERSION = '2.0.1';
+const MIN_CHARACTERS = 9500;
+const MIN_ETYMOLOGY = 9000;
 
 function codepoint(ch) {
     return ch.codePointAt(0).toString(16);
@@ -37,10 +45,16 @@ function codepoint(ch) {
 function loadDictionary() {
     const map = new Map();
     if (!fs.existsSync(DICT_FILE)) {
-        console.warn('WARNING: ' + DICT_FILE + ' not found — characters will have stroke data only.');
-        return map;
+        throw new Error(DICT_FILE + ' not found. Download the pinned source first (see header).');
     }
-    const lines = fs.readFileSync(DICT_FILE, 'utf8').split('\n');
+    const input = fs.readFileSync(DICT_FILE);
+    const actualHash = crypto.createHash('sha256').update(input).digest('hex');
+    if (actualHash !== EXPECTED_DICT_SHA256) {
+        throw new Error('Unexpected Make Me a Hanzi input SHA-256: ' + actualHash);
+    }
+
+    const lines = input.toString('utf8').split('\n');
+    let invalidLines = 0;
     for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -48,21 +62,34 @@ function loadDictionary() {
         try {
             entry = JSON.parse(trimmed);
         } catch (e) {
+            invalidLines++;
             continue;
         }
         if (entry.character) map.set(entry.character, entry);
+    }
+    if (invalidLines || map.size < MIN_CHARACTERS) {
+        throw new Error('Invalid Make Me a Hanzi input: ' + map.size +
+            ' characters and ' + invalidLines + ' malformed lines.');
     }
     return map;
 }
 
 function main() {
     if (!fs.existsSync(STROKE_DIR)) {
-        console.error('ERROR: ' + STROKE_DIR + ' not found. Run `npm install` first.');
-        process.exit(1);
+        throw new Error(STROKE_DIR + ' not found. Run `npm install` first.');
+    }
+
+    const strokePackage = JSON.parse(fs.readFileSync(path.join(STROKE_DIR, 'package.json'), 'utf8'));
+    if (strokePackage.version !== EXPECTED_STROKE_VERSION) {
+        throw new Error('Expected hanzi-writer-data ' + EXPECTED_STROKE_VERSION +
+            ', found ' + strokePackage.version + '.');
     }
 
     const dict = loadDictionary();
-    fs.mkdirSync(OUT_DIR, { recursive: true });
+    const tempDir = OUT_DIR + '.tmp-' + process.pid;
+    const backupDir = OUT_DIR + '.bak-' + process.pid;
+    if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.mkdirSync(tempDir, { recursive: true });
 
     const strokeFiles = fs.readdirSync(STROKE_DIR).filter(f => f.endsWith('.json') && f !== 'all.json');
 
@@ -98,9 +125,26 @@ function main() {
         }
 
         const json = JSON.stringify(out);
-        fs.writeFileSync(path.join(OUT_DIR, codepoint(ch) + '.json'), json);
+        fs.writeFileSync(path.join(tempDir, codepoint(ch) + '.json'), json);
         totalBytes += json.length;
         written++;
+    }
+
+    if (written < MIN_CHARACTERS || withEtymology < MIN_ETYMOLOGY) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        throw new Error('Generated character coverage is unexpectedly low: ' + written +
+            ' files, ' + withEtymology + ' with etymology.');
+    }
+
+    const hadExistingOutput = fs.existsSync(OUT_DIR);
+    try {
+        if (hadExistingOutput) fs.renameSync(OUT_DIR, backupDir);
+        fs.renameSync(tempDir, OUT_DIR);
+        if (hadExistingOutput) fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch (error) {
+        if (!fs.existsSync(OUT_DIR) && fs.existsSync(backupDir)) fs.renameSync(backupDir, OUT_DIR);
+        if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+        throw error;
     }
 
     console.log('Wrote ' + written + ' character files to data/chardata/');

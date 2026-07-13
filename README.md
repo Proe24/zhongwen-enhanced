@@ -65,7 +65,9 @@ In the meantime you can install it from source:
 2. Open `chrome://extensions` and enable **Developer mode** (top-right).
 3. Click **Load unpacked** and select this project folder.
 
-(Alternatively, run `build.ps1` to produce a packaged ZIP under `dist/`.)
+(Alternatively, run `build.ps1` to install the locked development dependencies,
+run the complete `npm run check` gate, and, if it passes, produce a packaged ZIP
+under `dist/`.)
 
 ### Firefox
 This fork targets Chrome (Manifest V3) and is not published for Firefox.
@@ -169,7 +171,7 @@ also import them into Anki. (See the Anki manual for further details.)
 
 ## Skritter Support
 If you're studying Chinese characters using Skritter you can easily add Chinese words
-to your vocabulary queue: just hit <kbd>S</kbd> on the keyboard. This opens up a new tab that
+to your vocabulary queue: just hit <kbd>Shift</kbd> + <kbd>S</kbd> on the keyboard. This opens up a new tab that
 takes you to the Skritter web site. If you're not logged into Skritter you'll see the
 login page. After you're logged in, the word is automatically added to your study queue.
 

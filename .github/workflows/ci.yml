@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm audit --audit-level=moderate
+
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Exercise the executable package failure-path test
+        run: npm test -- --test-name-pattern="release package"
+      - name: Build the verified Web Store package
+        shell: powershell
+        run: |
+          .\build.ps1
+          $version = (Get-Content .\manifest.json -Raw | ConvertFrom-Json).version
+          $archive = ".\dist\zhongwen-enhanced-$version.zip"
+          if (-not (Test-Path $archive)) { throw "Missing package: $archive" }
+
+  verify-generated-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Download and verify pinned generator inputs
+        run: |
+          curl -fL --retry 3 -o tools/mmh-dictionary.txt \
+            https://raw.githubusercontent.com/skishore/makemeahanzi/bddc96d41bef78427ed0e034e9f7e31d71fd1b92/dictionary.txt
+          curl -fL --retry 3 -o tools/cow-cmn.tab \
+            https://bond-lab.github.io/cow/data/0.9/wn-data-cmn.tab
+          echo "744bb05d5b0742e9ee35c37791f94d56a173349b3367569e7ca11e510364d203  tools/mmh-dictionary.txt" | sha256sum -c -
+          echo "ba11514279f48963d5a83aeef17de3c53b06bce6a1a50e599a88beb81388534b  tools/cow-cmn.tab" | sha256sum -c -
+      - name: Reproduce tracked generated data exactly
+        run: |
+          node tools/build-chardata.js
+          node tools/build-thesaurus.js
+          git diff --exit-code -- data/chardata data/thesaurus.json
+          test -z "$(git status --porcelain --untracked-files=all -- data/chardata data/thesaurus.json)"

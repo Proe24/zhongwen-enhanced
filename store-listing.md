@@ -31,7 +31,7 @@ and Anki/Pleco export.
   and text is sent only to the provider you pick.
 - Built-in word lists — save words while you read, organize them into named
   lists, and add your own notes.
-- Study mode — review your saved words with spaced-repetition flashcards.
+- Study mode — review your saved words in interactive flashcard sessions.
 - Export to Anki and Pleco for studying in your favorite app.
 - Quick links to grammar and usage notes on the Chinese Grammar Wiki.
 - Keyboard navigation for reading through text word by word.
@@ -45,6 +45,11 @@ and Anki/Pleco export.
 - Text is sent to a third-party AI service only when you actively use the
   sentence-breakdown feature, and only to the provider you configured, using
   your own API key.
+- External dictionary, thesaurus, example-sentence, grammar, and vocabulary
+  shortcuts open the selected word in the chosen third-party site.
+- Shift+S calls Skritter's add-to-vocabulary endpoint and sends the entry's
+  simplified form, traditional form, reading, and English definition to add it
+  to your Skritter queue.
 - Full privacy policy:
   https://github.com/Proe24/zhongwen-enhanced/blob/master/PRIVACY.md
 
@@ -77,12 +82,15 @@ Chinese text on hover, with optional AI-assisted sentence breakdown.
   must read the Chinese text the user hovers over on any page, so the content
   script needs access to all sites. Page text is processed locally.
 - **api.anthropic.com / generativelanguage.googleapis.com / api.openai.com**
-  — Used only for the optional sentence-breakdown feature, to send the
-  user-selected sentence to the AI provider the user chose, authenticated with
-  the user's own API key.
+  — Used only for the optional sentence-breakdown feature, to send either the
+  user's exact context-menu selection or the punctuation-delimited surrounding
+  sentence requested with the `S` shortcut to the AI provider the user chose,
+  authenticated with the user's own API key.
 
 ### Data usage declaration
-Handles "Website content" (the selected text sent to the chosen AI provider).
+Handles "Website content" (the exact context-menu selection or surrounding
+sentence sent to the chosen AI provider, or the selected word included in a
+third-party lookup URL when the user invokes an external-site shortcut).
 Certifications (all true): does not sell user data; does not use data for
 purposes unrelated to the single purpose; does not use data for
 creditworthiness/lending.
