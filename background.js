@@ -510,7 +510,9 @@ async function performBreakdown(request) {
 }
 
 function handleBreakdown(request, callback) {
-    performBreakdown(request).then(callback);
+    performBreakdown(request).then(callback, error => callback({
+        error: error && error.message ? error.message : 'Unknown error'
+    }));
 }
 
 let wordlistQueue = Promise.resolve();
@@ -597,6 +599,15 @@ function serializeWordlist(wordlist, transientIds) {
     }));
 }
 
+function requireWordlistIds(wordlist, ids) {
+    let existingIds = new Set(wordlist.map(entry => entry.id));
+    for (let id of ids) {
+        if (!existingIds.has(id)) {
+            throw new Error('The word list changed. Reload it and try again.');
+        }
+    }
+}
+
 function handleAdd(request) {
     return enqueueWordlistTask(async function () {
         let [wordlistState, options] = await Promise.all([
@@ -640,9 +651,11 @@ function mutateWordlist(request) {
 
         switch (request.operation) {
             case 'delete':
+                requireWordlistIds(wordlist, ids);
                 wordlist = wordlist.filter(entry => !ids.has(entry.id));
                 break;
             case 'move':
+                requireWordlistIds(wordlist, ids);
                 wordlist.forEach(entry => {
                     if (ids.has(entry.id)) entry.list = request.list || '';
                 });
@@ -654,12 +667,11 @@ function mutateWordlist(request) {
                 break;
             case 'update': {
                 let entry = wordlist.find(item => item.id === request.id);
-                if (entry) {
-                    let patch = request.patch || {};
-                    ['notes', 'box', 'lastReviewed'].forEach(key => {
-                        if (Object.prototype.hasOwnProperty.call(patch, key)) entry[key] = patch[key];
-                    });
-                }
+                if (!entry) throw new Error('The word list changed. Reload it and try again.');
+                let patch = request.patch || {};
+                ['notes', 'box', 'lastReviewed'].forEach(key => {
+                    if (Object.prototype.hasOwnProperty.call(patch, key)) entry[key] = patch[key];
+                });
                 break;
             }
             default:

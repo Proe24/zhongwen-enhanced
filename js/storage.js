@@ -64,19 +64,45 @@
         });
     }
 
+    function parseWordlist(value) {
+        let entries = value ? JSON.parse(value) : [];
+        if (!Array.isArray(entries)) throw new Error('Saved word list has an invalid format.');
+        return entries;
+    }
+
+    function mergeWordlists(legacyValue, currentValue) {
+        let legacyEntries = parseWordlist(legacyValue);
+        let currentEntries = parseWordlist(currentValue);
+        return JSON.stringify(legacyEntries.concat(currentEntries));
+    }
+
     function migrate() {
         if (migrationPromise) return migrationPromise;
-        migrationPromise = getLocal('mv3Migrated').then(result => {
+        migrationPromise = getLocal(['mv3Migrated'].concat(MIGRATABLE_KEYS)).then(result => {
             if (result.mv3Migrated) return;
             let toWrite = { mv3Migrated: true };
+            let migratedKeys = [];
+            let legacyValues = {};
             try {
+                let availableLegacyValues = {};
                 MIGRATABLE_KEYS.forEach(k => {
-                    let v = localStorage[k];
-                    if (v !== undefined) toWrite[k] = v;
+                    let legacyValue = localStorage[k];
+                    if (legacyValue !== undefined) availableLegacyValues[k] = legacyValue;
                 });
+                legacyValues = availableLegacyValues;
             } catch (e) { /* localStorage unavailable */ }
+            MIGRATABLE_KEYS.forEach(k => {
+                if (!Object.prototype.hasOwnProperty.call(legacyValues, k)) return;
+                let legacyValue = legacyValues[k];
+                if (k === 'wordlist' && result.wordlist !== undefined) {
+                    toWrite.wordlist = mergeWordlists(legacyValue, result.wordlist);
+                } else if (result[k] === undefined) {
+                    toWrite[k] = legacyValue;
+                }
+                migratedKeys.push(k);
+            });
             return setLocal(toWrite).then(() => {
-                try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
+                try { migratedKeys.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
             });
         }).catch(error => {
             // A transient failure must not poison every later storage request

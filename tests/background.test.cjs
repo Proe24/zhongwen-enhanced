@@ -214,6 +214,26 @@ test('background storage reads reject chrome.runtime.lastError', async function 
     assert.match(response.error, /storage unavailable/);
 });
 
+test('breakdown storage read failures return exactly one listener error response', async function () {
+    const loaded = loadBackground({ aiProvider: 'gemini', geminiApiKey: 'key' });
+    await Promise.resolve();
+    loaded.setStorageReadFailure('provider settings unavailable');
+
+    let callbackCount = 0;
+    let response;
+    loaded.listeners.runtimeMessage({
+        type: 'breakdown', sentence: '中文', prompt: 'prompt'
+    }, {}, function (value) {
+        callbackCount++;
+        response = value;
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(callbackCount, 1);
+    assert.match(response.error, /provider settings unavailable/);
+    assert.equal(loaded.fetchStarts.length, 0);
+});
+
 test('legacy word lists remain stable and deletable when ID migration exceeds quota', async function () {
     const legacy = [
         {
@@ -265,6 +285,64 @@ test('legacy word lists remain stable and deletable when ID migration exceeds qu
     assert.equal(afterDelete.error, undefined);
     assert.equal(afterDelete.entries.length, 1);
     assert.equal(afterDelete.entries[0].id, firstRead.entries[1].id);
+});
+
+test('duplicate transient legacy IDs reject stale delete and update mutations', async function () {
+    const duplicate = {
+        timestamp: 1,
+        simplified: '同',
+        traditional: '同',
+        pinyin: 'tóng',
+        definition: 'same'
+    };
+    const loaded = loadBackground({
+        wordlist: JSON.stringify([duplicate, Object.assign({}, duplicate)])
+    });
+    await Promise.resolve();
+    loaded.setStorageFailure(function (values) {
+        if (!values.wordlist) return null;
+        const stored = JSON.parse(values.wordlist);
+        return stored.some(entry => entry.id && entry.id.startsWith('legacy-'))
+            ? 'quota exceeded'
+            : null;
+    });
+
+    async function send(message) {
+        return new Promise(resolve => loaded.listeners.runtimeMessage(message, {}, resolve));
+    }
+
+    const firstRead = await send({ type: 'wordlist-get' });
+    assert.equal(firstRead.entries.length, 2);
+    const firstId = firstRead.entries[0].id;
+    const staleRemainingId = firstRead.entries[1].id;
+    assert.notEqual(firstId, staleRemainingId);
+
+    const firstDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [firstId]
+    });
+    assert.equal(firstDelete.error, undefined);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 1);
+
+    const staleUpdate = await send({
+        type: 'wordlist-mutate', operation: 'update', id: staleRemainingId,
+        patch: { notes: 'must not be reported as saved' }
+    });
+    assert.match(staleUpdate.error, /word list changed/i);
+    assert.equal(JSON.parse(loaded.storage.wordlist)[0].notes, undefined);
+
+    const staleDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [staleRemainingId]
+    });
+    assert.match(staleDelete.error, /word list changed/i);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 1);
+
+    const refreshed = await send({ type: 'wordlist-get' });
+    assert.notEqual(refreshed.entries[0].id, staleRemainingId);
+    const finalDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [refreshed.entries[0].id]
+    });
+    assert.equal(finalDelete.error, undefined);
+    assert.deepEqual(JSON.parse(loaded.storage.wordlist), []);
 });
 
 test('a search waits for a cold dictionary load before responding', async function () {
