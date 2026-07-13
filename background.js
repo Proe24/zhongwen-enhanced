@@ -67,6 +67,7 @@ const OPTION_DEFAULTS = {
 
 let isActivated = false;
 let activationGeneration = 0;
+let activationToggleQueue = Promise.resolve();
 let resolveActivationStateReady;
 const activationStateReady = new Promise(resolve => { resolveActivationStateReady = resolve; });
 let tabIDs = {};
@@ -265,6 +266,12 @@ async function deactivateExtension() {
     }
     if (isActivated || generation !== activationGeneration) return;
 
+    applyDeactivatedState(generation);
+}
+
+function applyDeactivatedState(generation) {
+    if (isActivated || generation !== activationGeneration) return;
+
     chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
     chrome.action.setBadgeText({ text: '' });
 
@@ -279,6 +286,12 @@ async function deactivateExtension() {
     });
 
     chrome.contextMenus.removeAll();
+}
+
+function restoreDeactivatedState() {
+    let generation = ++activationGeneration;
+    isActivated = false;
+    applyDeactivatedState(generation);
 }
 
 async function restoreActivatedState(existingGeneration) {
@@ -298,14 +311,18 @@ async function restoreActivatedState(existingGeneration) {
     await updateIcon();
 }
 
-async function activateExtensionToggle(currentTab) {
-    await activationStateReady;
-    let { enabled } = await getEnabledStorage();
-    if (enabled === '1') {
-        await deactivateExtension();
-    } else {
-        await activateExtension(currentTab.id, true);
-    }
+function activateExtensionToggle(currentTab) {
+    let run = activationToggleQueue.then(async function () {
+        await activationStateReady;
+        let { enabled } = await getEnabledStorage();
+        if (enabled === '1') {
+            await deactivateExtension();
+        } else {
+            await activateExtension(currentTab.id, true);
+        }
+    });
+    activationToggleQueue = run.catch(() => { /* keep later toggles running */ });
+    return run;
 }
 
 async function enableTab(tabId) {
@@ -320,6 +337,7 @@ async function enableTab(tabId) {
     }
 
     let options = await getOptions();
+    if (!isActivated || generation !== activationGeneration) return;
     chrome.tabs.sendMessage(tabId, { type: 'enable', config: options }).catch(() => {});
 }
 
@@ -348,7 +366,7 @@ chrome.storage.onChanged.addListener(function (changes, areaName) {
     if (changes.enabled.newValue === '1') {
         if (!isActivated) return restoreActivatedState().catch(() => {});
     } else if (isActivated) {
-        return deactivateExtension().catch(() => {});
+        restoreDeactivatedState();
     }
 });
 

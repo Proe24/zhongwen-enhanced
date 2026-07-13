@@ -502,6 +502,7 @@ test('late enabled changes reconcile startup and broadcast deactivation without 
         callback([{ tabs: [{ id: 7 }] }]);
     };
     loaded.storage.enabled = '0';
+    loaded.setStorageFailure('redundant writes must not happen');
     await loaded.listeners.storageChanged({
         enabled: { oldValue: '1', newValue: '0' }
     }, 'local');
@@ -509,7 +510,7 @@ test('late enabled changes reconcile startup and broadcast deactivation without 
     assert.equal(loaded.run('isActivated'), false);
     assert.equal(loaded.badgeTexts.at(-1), '');
     assert.ok(loaded.tabMessages.includes('disable'));
-    assert.equal(enabledWrites, 1);
+    assert.equal(enabledWrites, 0);
 });
 
 test('a stale enableTab read cannot undo a concurrent deactivation', async function () {
@@ -560,6 +561,72 @@ test('a stale enableTab read cannot undo a concurrent deactivation', async funct
     assert.equal(loaded.run('isActivated'), false);
     assert.equal(loaded.storage.enabled, '0');
     assert.deepEqual(enabledWrites, ['0']);
+});
+
+test('a late enableTab options read cannot re-enable a tab after deactivation', async function () {
+    const loaded = loadBackground({ enabled: '0' });
+    await new Promise(resolve => setImmediate(resolve));
+    loaded.storage.enabled = '1';
+    loaded.run('isActivated = true; activationGeneration++;');
+
+    const originalGet = loaded.sandbox.chrome.storage.local.get;
+    let releaseOptionsRead;
+    loaded.sandbox.chrome.storage.local.get = function (keys, callback) {
+        if (Array.isArray(keys) && !releaseOptionsRead) {
+            releaseOptionsRead = function () { originalGet(keys, callback); };
+            return;
+        }
+        originalGet(keys, callback);
+    };
+    loaded.sandbox.chrome.windows.getAll = function (_options, callback) {
+        callback([{ tabs: [{ id: 4 }] }]);
+    };
+
+    const enabling = loaded.run('enableTab(4)');
+    while (!releaseOptionsRead) await Promise.resolve();
+    await loaded.run('deactivateExtension()');
+    releaseOptionsRead();
+    await enabling;
+
+    assert.equal(loaded.run('isActivated'), false);
+    assert.equal(loaded.storage.enabled, '0');
+    assert.deepEqual(loaded.tabMessages, ['disable']);
+});
+
+test('rapid action clicks are serialized as atomic toggles', async function () {
+    const loaded = loadBackground({ enabled: '0' });
+    await new Promise(resolve => setImmediate(resolve));
+    loaded.run([
+        'ensureDictionary = function () { return Promise.resolve({}); };',
+        'getOptions = function () { return Promise.resolve({}); };',
+        'updateIcon = function () { return Promise.resolve(); };'
+    ].join('\n'));
+
+    let lockTail = Promise.resolve();
+    loaded.sandbox.navigator = {
+        locks: {
+            request: function (_name, task) {
+                const run = lockTail.then(task);
+                lockTail = run.catch(() => {});
+                return run;
+            }
+        }
+    };
+    const writes = [];
+    const originalSet = loaded.sandbox.chrome.storage.local.set;
+    loaded.sandbox.chrome.storage.local.set = function (values, callback) {
+        if (Object.prototype.hasOwnProperty.call(values, 'enabled')) writes.push(values.enabled);
+        originalSet(values, callback);
+    };
+
+    await Promise.all([
+        loaded.listeners.actionClicked({ id: 1 }),
+        loaded.listeners.actionClicked({ id: 1 })
+    ]);
+
+    assert.deepEqual(writes, ['1', '0']);
+    assert.equal(loaded.storage.enabled, '0');
+    assert.equal(loaded.run('isActivated'), false);
 });
 
 test('a search waits for a cold dictionary load before responding', async function () {
