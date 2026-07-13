@@ -54,6 +54,7 @@ function loadBackground(initialStorage) {
         },
         chrome: {
             storage: {
+                onChanged: event('storageChanged'),
                 local: {
                     get: function (keys, callback) {
                         if (storageReadFailure) {
@@ -470,6 +471,95 @@ test('word-list tasks and enabled writes share the zhongwen storage Web Lock', a
     assert.equal(maxActiveLocks, 1);
     assert.equal(JSON.parse(loaded.storage.wordlist).length, 2);
     assert.equal(loaded.storage.enabled, '0');
+});
+
+test('late enabled changes reconcile startup and broadcast deactivation without loops', async function () {
+    const loaded = loadBackground({ enabled: '0' });
+    await new Promise(resolve => setImmediate(resolve));
+    loaded.run([
+        'ensureDictionary = function () { return Promise.resolve({}); };',
+        'updateIcon = function () { return Promise.resolve(); };'
+    ].join('\n'));
+
+    let enabledWrites = 0;
+    const originalSet = loaded.sandbox.chrome.storage.local.set;
+    loaded.sandbox.chrome.storage.local.set = function (values, callback) {
+        if (Object.prototype.hasOwnProperty.call(values, 'enabled')) enabledWrites++;
+        originalSet(values, callback);
+    };
+
+    loaded.storage.enabled = '1';
+    await loaded.listeners.storageChanged({
+        enabled: { oldValue: '0', newValue: '1' }
+    }, 'local');
+
+    assert.equal(loaded.run('isActivated'), true);
+    assert.equal(loaded.badgeTexts.at(-1), 'On');
+    assert.ok(loaded.createdMenus.includes('open-wordlist'));
+    assert.equal(enabledWrites, 0);
+
+    loaded.sandbox.chrome.windows.getAll = function (_options, callback) {
+        callback([{ tabs: [{ id: 7 }] }]);
+    };
+    loaded.storage.enabled = '0';
+    await loaded.listeners.storageChanged({
+        enabled: { oldValue: '1', newValue: '0' }
+    }, 'local');
+
+    assert.equal(loaded.run('isActivated'), false);
+    assert.equal(loaded.badgeTexts.at(-1), '');
+    assert.ok(loaded.tabMessages.includes('disable'));
+    assert.equal(enabledWrites, 1);
+});
+
+test('a stale enableTab read cannot undo a concurrent deactivation', async function () {
+    const loaded = loadBackground({ enabled: '0' });
+    await new Promise(resolve => setImmediate(resolve));
+    loaded.storage.enabled = '1';
+    loaded.run('isActivated = true; activationGeneration++;');
+
+    let lockTail = Promise.resolve();
+    loaded.sandbox.navigator = {
+        locks: {
+            request: function (_name, task) {
+                const run = lockTail.then(task);
+                lockTail = run.catch(() => {});
+                return run;
+            }
+        }
+    };
+
+    const originalGet = loaded.sandbox.chrome.storage.local.get;
+    let releaseEnabledRead;
+    let deferEnabledRead = true;
+    loaded.sandbox.chrome.storage.local.get = function (keys, callback) {
+        if (keys === 'enabled' && deferEnabledRead) {
+            deferEnabledRead = false;
+            releaseEnabledRead = function () { originalGet(keys, callback); };
+            return;
+        }
+        originalGet(keys, callback);
+    };
+
+    let enabledWrites = [];
+    const originalSet = loaded.sandbox.chrome.storage.local.set;
+    loaded.sandbox.chrome.storage.local.set = function (values, callback) {
+        if (Object.prototype.hasOwnProperty.call(values, 'enabled')) {
+            enabledWrites.push(values.enabled);
+        }
+        originalSet(values, callback);
+    };
+
+    const enabling = loaded.run('enableTab(2)');
+    await Promise.resolve();
+    assert.equal(typeof releaseEnabledRead, 'function');
+    const deactivating = loaded.run('deactivateExtension()');
+    releaseEnabledRead();
+    await Promise.all([enabling, deactivating]);
+
+    assert.equal(loaded.run('isActivated'), false);
+    assert.equal(loaded.storage.enabled, '0');
+    assert.deepEqual(enabledWrites, ['0']);
 });
 
 test('a search waits for a cold dictionary load before responding', async function () {

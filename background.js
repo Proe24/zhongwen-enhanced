@@ -111,6 +111,10 @@ function setStorage(obj) {
     });
 }
 
+function getEnabledStorage() {
+    return withStorageLock(() => getStorage('enabled'));
+}
+
 async function getOptions() {
     let result = await getStorage(OPTION_KEYS);
     let out = {};
@@ -277,9 +281,27 @@ async function deactivateExtension() {
     chrome.contextMenus.removeAll();
 }
 
+async function restoreActivatedState(existingGeneration) {
+    let generation = existingGeneration === undefined
+        ? ++activationGeneration
+        : existingGeneration;
+    if (generation !== activationGeneration) return;
+
+    isActivated = true;
+    resolveActivationStateReady();
+    await ensureDictionary();
+    if (!isActivated || generation !== activationGeneration) return;
+    await rebuildContextMenus(generation);
+    if (!isActivated || generation !== activationGeneration) return;
+    chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
+    chrome.action.setBadgeText({ text: 'On' });
+    await updateIcon();
+}
+
 async function activateExtensionToggle(currentTab) {
     await activationStateReady;
-    if (isActivated) {
+    let { enabled } = await getEnabledStorage();
+    if (enabled === '1') {
         await deactivateExtension();
     } else {
         await activateExtension(currentTab.id, true);
@@ -287,7 +309,9 @@ async function activateExtensionToggle(currentTab) {
 }
 
 async function enableTab(tabId) {
-    let { enabled } = await getStorage('enabled');
+    let generation = activationGeneration;
+    let { enabled } = await getEnabledStorage();
+    if (generation !== activationGeneration) return;
     if (enabled !== '1') return;
 
     if (!isActivated) {
@@ -318,6 +342,15 @@ function search(text) {
 }
 
 chrome.action.onClicked.addListener(activateExtensionToggle);
+
+chrome.storage.onChanged.addListener(function (changes, areaName) {
+    if (areaName !== 'local' || !changes.enabled) return;
+    if (changes.enabled.newValue === '1') {
+        if (!isActivated) return restoreActivatedState().catch(() => {});
+    } else if (isActivated) {
+        return deactivateExtension().catch(() => {});
+    }
+});
 
 chrome.tabs.onActivated.addListener(activeInfo => {
     if (activeInfo.tabId === tabIDs['wordlist']) {
@@ -776,18 +809,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 (async function init() {
     let generation = ++activationGeneration;
     try {
-        let { enabled } = await getStorage('enabled');
+        let { enabled } = await getEnabledStorage();
         if (generation !== activationGeneration) return;
         if (enabled === '1') {
-            isActivated = true;
-            resolveActivationStateReady();
-            await ensureDictionary();
-            if (!isActivated || generation !== activationGeneration) return;
-            await rebuildContextMenus(generation);
-            if (!isActivated || generation !== activationGeneration) return;
-            chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
-            chrome.action.setBadgeText({ text: 'On' });
-            await updateIcon();
+            await restoreActivatedState(generation);
         }
     } finally {
         resolveActivationStateReady();
