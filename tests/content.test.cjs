@@ -11,17 +11,25 @@ const vm = require('node:vm');
 function loadContentScript() {
     const source = fs.readFileSync(path.join(__dirname, '..', 'content.js'), 'utf8');
     const sentMessages = [];
+    const pendingMessageCallbacks = [];
     let messageResponse = { ok: true };
+    let deferMessageCallbacks = false;
     const sandbox = {
         chrome: {
             runtime: {
                 onMessage: { addListener: function () {} },
+                getURL: function (url) { return url; },
                 sendMessage: function (message, callback) {
                     sentMessages.push(message);
-                    if (callback) callback(messageResponse);
+                    if (!callback) return;
+                    if (deferMessageCallbacks) {
+                        pendingMessageCallbacks.push({ message: message, callback: callback });
+                    } else {
+                        callback(messageResponse);
+                    }
                 }
             },
-            storage: { local: { get: function () {} } }
+            storage: { local: { get: function (_keys, callback) { if (callback) callback({}); } } }
         },
         console: console,
         requestAnimationFrame: function (callback) { callback(); },
@@ -34,9 +42,44 @@ function loadContentScript() {
     return {
         sandbox: sandbox,
         sentMessages: sentMessages,
+        pendingMessageCallbacks: pendingMessageCallbacks,
         setMessageResponse: function (response) { messageResponse = response; },
+        setDeferMessageCallbacks: function (value) { deferMessageCallbacks = value; },
         run: code => vm.runInContext(code, sandbox)
     };
+}
+
+function installPanelHarness(loaded) {
+    const scroll = {
+        innerHTML: '',
+        querySelector: function () { return null; },
+        querySelectorAll: function () { return []; }
+    };
+    const title = { textContent: '' };
+    const status = { innerHTML: '' };
+    const panel = {
+        setAttribute: function () {},
+        classList: { add: function () {}, remove: function () {} }
+    };
+    loaded.sandbox.scroll = scroll;
+    loaded.sandbox.panel = panel;
+    loaded.sandbox.mutations = [];
+    loaded.sandbox.document = {
+        getElementById: function (id) {
+            if (id === 'zhongwen-panel-title') return title;
+            if (id === 'zhongwen-panel-scroll') return scroll;
+            if (id === 'zhongwen-panel-status') return status;
+            return null;
+        }
+    };
+    loaded.sandbox.getComputedStyle = function () {
+        return { color: '#222', getPropertyValue: function () { return ''; } };
+    };
+    loaded.run([
+        "config = { direction: 'vellum', mode: 'light' };",
+        'createPanel = function () { return panel; };'
+    ].join('\n'));
+    return { scroll: scroll, title: title };
 }
 
 test('sentence and provider markup is rendered as text', function () {
@@ -77,17 +120,66 @@ test('AI response normalization tolerates missing and non-string fields', functi
     assert.match(loaded.run("formatNumberedPinyin('nǐ')"), /tone3/);
 });
 
-test('a newer panel session invalidates older asynchronous work', function () {
+test('a stale sentence response cannot overwrite a newer sentence panel', function () {
     const loaded = loadContentScript();
-    const first = loaded.run("beginPanelSession('sentence', 'A')");
-    const second = loaded.run("beginPanelSession('sentence', 'B')");
+    installPanelHarness(loaded);
+    loaded.setDeferMessageCallbacks(true);
+    loaded.run([
+        "renderBreakdown = function (_scroll, sentence) { mutations.push('sentence:' + sentence); };",
+        "openPanel('old sentence');",
+        "openPanel('new sentence');"
+    ].join('\n'));
 
-    loaded.sandbox.first = first;
-    loaded.sandbox.second = second;
-    assert.equal(loaded.run('isCurrentPanelSession(first)'), false);
-    assert.equal(loaded.run('isCurrentPanelSession(second)'), true);
-    loaded.run('invalidatePanelSession()');
-    assert.equal(loaded.run('isCurrentPanelSession(second)'), false);
+    assert.equal(loaded.pendingMessageCallbacks.length, 2);
+    loaded.pendingMessageCallbacks[0].callback({
+        provider: 'AI',
+        text: '{"literal":"old","idiomatic":"old","words":[],"grammar":[]}'
+    });
+    assert.deepEqual(loaded.sandbox.mutations, []);
+
+    loaded.pendingMessageCallbacks[1].callback({
+        provider: 'AI',
+        text: '{"literal":"new","idiomatic":"new","words":[],"grammar":[]}'
+    });
+    assert.deepEqual(loaded.sandbox.mutations, ['sentence:new sentence']);
+});
+
+test('stale character data cannot overwrite a newer character panel', async function () {
+    const loaded = loadContentScript();
+    installPanelHarness(loaded);
+    loaded.run([
+        'charResolvers = [];',
+        'fetchCharData = function () { return new Promise(function (resolve) { charResolvers.push(resolve); }); };',
+        "renderCharCard = function (ch) { mutations.push('character:' + ch); };",
+        "openCharPanel('旧', '舊');",
+        "openCharPanel('新', '新');"
+    ].join('\n'));
+
+    assert.equal(loaded.run('charResolvers.length'), 3);
+    loaded.run("charResolvers[0]({ strokes: ['old'] }); charResolvers[1]({ strokes: ['old'] });");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(loaded.sandbox.mutations, []);
+
+    loaded.run("charResolvers[2]({ strokes: ['new'] });");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(loaded.sandbox.mutations, ['character:新']);
+});
+
+test('a stale thesaurus response cannot overwrite a newer thesaurus panel', function () {
+    const loaded = loadContentScript();
+    installPanelHarness(loaded);
+    loaded.setDeferMessageCallbacks(true);
+    loaded.run([
+        "renderThesaurus = function (word) { mutations.push('thesaurus:' + word); };",
+        "openThesaurusPanel('旧', '舊');",
+        "openThesaurusPanel('新', '新');"
+    ].join('\n'));
+
+    assert.equal(loaded.pendingMessageCallbacks.length, 2);
+    loaded.pendingMessageCallbacks[0].callback({ synonyms: ['old'] });
+    assert.deepEqual(loaded.sandbox.mutations, []);
+    loaded.pendingMessageCallbacks[1].callback({ synonyms: ['new'] });
+    assert.deepEqual(loaded.sandbox.mutations, ['thesaurus:新']);
 });
 
 test('plain shortcuts do not run while typing in editable controls', function () {
@@ -121,6 +213,35 @@ test('synthetic page events cannot trigger privileged shortcuts or hover state',
 
     assert.doesNotThrow(function () { loaded.run('onKeyDown(event)'); });
     assert.doesNotThrow(function () { loaded.run('onMouseMove({ isTrusted: false })'); });
+});
+
+test('Shift+S sends the complete dictionary entry to Skritter add-to-vocabulary', function () {
+    const loaded = loadContentScript();
+    loaded.run([
+        "config = { skritterTLD: 'cn' };",
+        "savedSearchResults = [['汉', '漢', 'hàn', 'Chinese person & language', 'han4']];",
+        'isVisible = function () { return true; };'
+    ].join('\n'));
+    loaded.sandbox.event = {
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: true,
+        isTrusted: true,
+        keyCode: 83,
+        target: { matches: function () { return false; }, isContentEditable: false }
+    };
+
+    loaded.run('onKeyDown(event)');
+
+    assert.equal(loaded.sentMessages.length, 1);
+    assert.equal(loaded.sentMessages[0].type, 'open');
+    assert.equal(loaded.sentMessages[0].tabType, 'skritter');
+    assert.equal(
+        loaded.sentMessages[0].url,
+        'https://skritter.cn/vocab/api/add?from=zhongwen&ref=zhongwen&lang=zh' +
+            '&word=%E6%B1%89&trad=%E6%BC%A2&rdng=han4&defn=Chinese%20person%20%26%20language'
+    );
 });
 
 test('plain save honors the preference while Shift+R explicitly requests all entries', function () {

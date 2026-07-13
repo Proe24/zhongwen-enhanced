@@ -11,6 +11,40 @@ const test = require('node:test');
 
 const root = path.join(__dirname, '..');
 
+function findPowerShell() {
+    const candidates = process.platform === 'win32'
+        ? ['powershell.exe', 'pwsh.exe']
+        : ['pwsh', 'powershell'];
+    return candidates.find(command => {
+        const result = childProcess.spawnSync(command, ['-NoProfile', '-NonInteractive', '-Command', 'exit 0']);
+        return !result.error && result.status === 0;
+    });
+}
+
+function copyFile(source, destination) {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(source, destination);
+}
+
+function writeFailingNpm(temp, passInstall) {
+    if (process.platform === 'win32') {
+        const command = path.join(temp, 'npm-fail.cmd');
+        const script = passInstall
+            ? '@echo off\r\nif "%1"=="ci" exit /b 0\r\nexit /b 23\r\n'
+            : '@exit /b 23\r\n';
+        fs.writeFileSync(command, script);
+        return command;
+    }
+
+    const command = path.join(temp, 'npm-fail');
+    const script = passInstall
+        ? '#!/bin/sh\n[ "$1" = "ci" ] && exit 0\nexit 23\n'
+        : '#!/bin/sh\nexit 23\n';
+    fs.writeFileSync(command, script);
+    fs.chmodSync(command, 0o755);
+    return command;
+}
+
 test('release version sources agree and manifest files exist', function () {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json')));
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
@@ -27,8 +61,8 @@ test('release version sources agree and manifest files exist', function () {
 
 test('the documented release package runs verification before creating output', function () {
     const build = fs.readFileSync(path.join(root, 'build.ps1'), 'utf8');
-    const installIndex = build.indexOf('& npm ci --ignore-scripts');
-    const checkIndex = build.indexOf('& npm run check');
+    const installIndex = build.indexOf('& $NpmCommand ci --ignore-scripts');
+    const checkIndex = build.indexOf('& $NpmCommand run check');
     const cleanIndex = build.indexOf("Remove-Item (Join-Path $root 'dist')");
     const archiveIndex = build.indexOf('Compress-Archive');
 
@@ -37,6 +71,32 @@ test('the documented release package runs verification before creating output', 
     assert.ok(installIndex < checkIndex, 'locked dependencies must be installed before verification');
     assert.ok(checkIndex < cleanIndex, 'verification must run before old artifacts are removed');
     assert.ok(checkIndex < archiveIndex, 'verification must run before packaging');
+});
+
+const powerShell = findPowerShell();
+test('the release package fails closed when dependency installation or checks fail', {
+    skip: powerShell ? false : 'PowerShell is not installed'
+}, function () {
+    for (const passInstall of [false, true]) {
+        const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'zhongwen-package-failure-'));
+        copyFile(path.join(root, 'build.ps1'), path.join(temp, 'build.ps1'));
+        copyFile(path.join(root, 'manifest.json'), path.join(temp, 'manifest.json'));
+
+        const dist = path.join(temp, 'dist');
+        fs.mkdirSync(dist);
+        const marker = path.join(dist, 'existing-artifact.txt');
+        fs.writeFileSync(marker, 'preserve me');
+        const failingNpm = writeFailingNpm(temp, passInstall);
+
+        const result = childProcess.spawnSync(powerShell, [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', path.join(temp, 'build.ps1'), '-NpmCommand', failingNpm
+        ], { cwd: temp, encoding: 'utf8' });
+
+        assert.notEqual(result.status, 0, result.stdout + result.stderr);
+        assert.equal(fs.readFileSync(marker, 'utf8'), 'preserve me');
+        assert.deepEqual(fs.readdirSync(dist), ['existing-artifact.txt']);
+    }
 });
 
 test('thesaurus generator rejects an unpinned empty input without replacing output', function () {

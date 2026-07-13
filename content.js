@@ -981,6 +981,16 @@ function saveDisplayedEntries(forceAll) {
     });
 }
 
+function buildSkritterAddUrl(result, tld) {
+    let skritter = tld === 'cn' ? 'https://skritter.cn' : 'https://skritter.com';
+    return skritter +
+        '/vocab/api/add?from=zhongwen&ref=zhongwen&lang=zh&word=' +
+        encodeURIComponent(result[0]) +
+        '&trad=' + encodeURIComponent(result[1]) +
+        '&rdng=' + encodeURIComponent(result[4]) +
+        '&defn=' + encodeURIComponent(result[3]);
+}
+
 function onKeyDown(keyDown) {
 
     if (!keyDown.isTrusted) {
@@ -1137,16 +1147,7 @@ function onKeyDown(keyDown) {
         case 83: // 's'
             if (keyDown.shiftKey) {
                 // Shift+S: Skritter
-                let skritter = 'https://skritter.com';
-                if (config.skritterTLD === 'cn') {
-                    skritter = 'https://skritter.cn';
-                }
-                skritter +=
-                    '/vocab/api/add?from=zhongwen&ref=zhongwen&lang=zh&word=' +
-                    encodeURIComponent(savedSearchResults[0][0]) +
-                    '&trad=' + encodeURIComponent(savedSearchResults[0][1]) +
-                    '&rdng=' + encodeURIComponent(savedSearchResults[0][4]) +
-                    '&defn=' + encodeURIComponent(savedSearchResults[0][3]);
+                let skritter = buildSkritterAddUrl(savedSearchResults[0], config.skritterTLD);
                 chrome.runtime.sendMessage({ type: 'open', tabType: 'skritter', url: skritter });
             } else {
                 // S: Sentence breakdown

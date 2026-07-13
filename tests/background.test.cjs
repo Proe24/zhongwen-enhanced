@@ -21,6 +21,7 @@ function loadBackground(initialStorage) {
     const tabMessages = [];
     const createdMenus = [];
     let storageFailure = null;
+    let storageReadFailure = null;
     let now = 10000;
     const FakeDate = { now: function () { return now; } };
     const listeners = {};
@@ -55,6 +56,12 @@ function loadBackground(initialStorage) {
             storage: {
                 local: {
                     get: function (keys, callback) {
+                        if (storageReadFailure) {
+                            sandbox.chrome.runtime.lastError = { message: storageReadFailure };
+                            callback();
+                            sandbox.chrome.runtime.lastError = null;
+                            return;
+                        }
                         const names = Array.isArray(keys) ? keys : [keys];
                         const result = {};
                         names.forEach(function (key) {
@@ -63,8 +70,11 @@ function loadBackground(initialStorage) {
                         callback(result);
                     },
                     set: function (values, callback) {
-                        if (storageFailure) {
-                            sandbox.chrome.runtime.lastError = { message: storageFailure };
+                        const failure = typeof storageFailure === 'function'
+                            ? storageFailure(values)
+                            : storageFailure;
+                        if (failure) {
+                            sandbox.chrome.runtime.lastError = { message: failure };
                             if (callback) callback();
                             sandbox.chrome.runtime.lastError = null;
                             return;
@@ -106,6 +116,7 @@ function loadBackground(initialStorage) {
         tabMessages: tabMessages,
         createdMenus: createdMenus,
         setStorageFailure: function (message) { storageFailure = message; },
+        setStorageReadFailure: function (message) { storageReadFailure = message; },
         listeners: listeners,
         run: code => vm.runInContext(code, sandbox)
     };
@@ -188,6 +199,72 @@ test('storage write failures reject saves and do not change activation state', a
     await assert.rejects(loaded.run('activateExtension(1, false)'), /quota exceeded/);
     assert.equal(loaded.run('isActivated'), false);
     assert.equal(loaded.storage.enabled, '0');
+});
+
+test('background storage reads reject chrome.runtime.lastError', async function () {
+    const loaded = loadBackground({ wordlist: '[]' });
+    await Promise.resolve();
+    loaded.setStorageReadFailure('storage unavailable');
+
+    await assert.rejects(loaded.run("getStorage('wordlist')"), /storage unavailable/);
+
+    const response = await new Promise(resolve => {
+        loaded.listeners.runtimeMessage({ type: 'wordlist-get' }, {}, resolve);
+    });
+    assert.match(response.error, /storage unavailable/);
+});
+
+test('legacy word lists remain stable and deletable when ID migration exceeds quota', async function () {
+    const legacy = [
+        {
+            timestamp: 1,
+            simplified: '旧',
+            traditional: '舊',
+            pinyin: 'jiù',
+            definition: 'old'
+        },
+        {
+            timestamp: 2,
+            simplified: '新',
+            traditional: '新',
+            pinyin: 'xīn',
+            definition: 'new'
+        }
+    ];
+    const loaded = loadBackground({ wordlist: JSON.stringify(legacy) });
+    await Promise.resolve();
+    loaded.setStorageFailure(function (values) {
+        if (!values.wordlist) return null;
+        const stored = JSON.parse(values.wordlist);
+        return stored.some(entry => entry.id && entry.id.startsWith('legacy-'))
+            ? 'quota exceeded'
+            : null;
+    });
+
+    async function send(message) {
+        return new Promise(resolve => loaded.listeners.runtimeMessage(message, {}, resolve));
+    }
+
+    const firstRead = await send({ type: 'wordlist-get' });
+    const secondRead = await send({ type: 'wordlist-get' });
+    assert.equal(firstRead.error, undefined);
+    assert.deepEqual(
+        secondRead.entries.map(entry => entry.id),
+        firstRead.entries.map(entry => entry.id)
+    );
+    assert.ok(firstRead.entries.every(entry => entry.id.startsWith('legacy-')));
+
+    const removedId = firstRead.entries[0].id;
+    const deleteResponse = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [removedId]
+    });
+    assert.equal(deleteResponse.error, undefined);
+    assert.deepEqual(JSON.parse(loaded.storage.wordlist), [legacy[1]]);
+
+    const afterDelete = await send({ type: 'wordlist-get' });
+    assert.equal(afterDelete.error, undefined);
+    assert.equal(afterDelete.entries.length, 1);
+    assert.equal(afterDelete.entries[0].id, firstRead.entries[1].id);
 });
 
 test('a search waits for a cold dictionary load before responding', async function () {

@@ -76,7 +76,15 @@ let thesaurus;        // word -> [synonyms], lazily loaded from data/thesaurus.j
 let thesaurusLoading; // in-flight load promise, so concurrent lookups share one fetch
 
 function getStorage(keys) {
-    return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(keys, function (result) {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                resolve(result || {});
+            }
+        });
+    });
 }
 
 function setStorage(obj) {
@@ -512,6 +520,30 @@ function createEntryId() {
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 }
 
+function createLegacyEntryId(entry, occurrence) {
+    // Use fields that word-list mutations do not edit so a best-effort ID stays
+    // stable even when the migration cannot be persisted and the worker wakes
+    // again later. The occurrence suffix distinguishes otherwise identical
+    // legacy records.
+    let identity = {};
+    [
+        'timestamp', 'simplified', 'traditional', 'pinyin', 'definition',
+        'isSentence', 'breakdown'
+    ].forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(entry, key)) identity[key] = entry[key];
+    });
+    let value = JSON.stringify(identity);
+    let first = 2166136261;
+    let second = 5381;
+    for (let i = 0; i < value.length; i++) {
+        let code = value.charCodeAt(i);
+        first = Math.imul(first ^ code, 16777619);
+        second = ((second << 5) + second) ^ code;
+    }
+    return 'legacy-' + (first >>> 0).toString(36) + '-' +
+        (second >>> 0).toString(36) + '-' + occurrence.toString(36);
+}
+
 function enqueueWordlistTask(task) {
     let run = wordlistQueue.then(task);
     wordlistQueue = run.catch(() => { /* keep later mutations running */ });
@@ -528,23 +560,50 @@ async function readWordlist() {
     }
     if (!Array.isArray(entries)) throw new Error('Saved word list has an invalid format.');
 
-    let changed = false;
+    let generatedIds = new Set();
+    let occurrences = new Map();
     entries.forEach(entry => {
         if (!entry.id) {
-            entry.id = createEntryId();
-            changed = true;
+            let fingerprint = JSON.stringify([
+                entry.timestamp, entry.simplified, entry.traditional, entry.pinyin,
+                entry.definition, entry.isSentence, entry.breakdown
+            ]);
+            let occurrence = occurrences.get(fingerprint) || 0;
+            occurrences.set(fingerprint, occurrence + 1);
+            entry.id = createLegacyEntryId(entry, occurrence);
+            generatedIds.add(entry.id);
         }
     });
-    if (changed) await setStorage({ wordlist: JSON.stringify(entries) });
-    return entries;
+    let transientIds = new Set();
+    if (generatedIds.size) {
+        try {
+            await setStorage({ wordlist: JSON.stringify(entries) });
+        } catch (error) {
+            // ID persistence is an upgrade convenience. Reads must still work
+            // when the expanded legacy JSON exceeds the storage quota.
+            transientIds = generatedIds;
+        }
+    }
+    return { entries: entries, transientIds: transientIds };
+}
+
+function serializeWordlist(wordlist, transientIds) {
+    if (!transientIds.size) return JSON.stringify(wordlist);
+    return JSON.stringify(wordlist.map(entry => {
+        if (!transientIds.has(entry.id)) return entry;
+        let stored = Object.assign({}, entry);
+        delete stored.id;
+        return stored;
+    }));
 }
 
 function handleAdd(request) {
     return enqueueWordlistTask(async function () {
-        let [wordlist, options] = await Promise.all([
+        let [wordlistState, options] = await Promise.all([
             readWordlist(),
             getStorage('saveToWordList')
         ]);
+        let wordlist = wordlistState.entries;
         let saveFirstEntryOnly = request.saveMode !== 'all' &&
             options.saveToWordList === 'firstEntryOnly';
         let listName = request.list || '';
@@ -566,14 +625,17 @@ function handleAdd(request) {
             wordlist.push(entry);
             if (saveFirstEntryOnly) break;
         }
-        await setStorage({ wordlist: JSON.stringify(wordlist) });
+        await setStorage({
+            wordlist: serializeWordlist(wordlist, wordlistState.transientIds)
+        });
         return wordlist;
     });
 }
 
 function mutateWordlist(request) {
     return enqueueWordlistTask(async function () {
-        let wordlist = await readWordlist();
+        let wordlistState = await readWordlist();
+        let wordlist = wordlistState.entries;
         let ids = new Set(request.ids || []);
 
         switch (request.operation) {
@@ -604,7 +666,9 @@ function mutateWordlist(request) {
                 throw new Error('Unknown word-list operation: ' + request.operation);
         }
 
-        await setStorage({ wordlist: JSON.stringify(wordlist) });
+        await setStorage({
+            wordlist: serializeWordlist(wordlist, wordlistState.transientIds)
+        });
         return wordlist;
     });
 }
@@ -652,7 +716,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 
         case 'wordlist-get': {
             enqueueWordlistTask(readWordlist)
-                .then(entries => callback({ entries: entries }))
+                .then(result => callback({ entries: result.entries }))
                 .catch(error => callback({ error: error.message }));
             return true;
         }

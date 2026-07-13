@@ -19,7 +19,8 @@ data the extension handles and how.
   provider you selected, using your own API key.
 - When you explicitly open an external dictionary or learning-site shortcut,
   the selected word is included in the destination URL so that site can show
-  the requested lookup.
+  the requested lookup. The `Shift+S` Skritter shortcut instead calls
+  Skritter's add-to-vocabulary endpoint as described below.
 
 ## Data stored locally on your device
 
@@ -59,13 +60,17 @@ When you use this feature:
 ## External dictionary and learning-site shortcuts
 
 The extension can open third-party sites for dictionary, pronunciation,
-thesaurus, example-sentence, grammar, vocabulary, character, and Skritter
-lookups. These actions run only when you click a link or invoke the relevant
-keyboard shortcut. The selected word or character is included in the URL sent
-to the chosen site. Depending on the action, destinations include LINE Dict,
-Forvo, Dict.cn, iCIBA, MDBG, Reverso, MoeDict, Tatoeba, Skritter, AllSet
-Learning, Baidu Hanyu, Zdic, YellowBridge, and zi.tools. The destination's own
-privacy policy and terms apply.
+thesaurus, example-sentence, grammar, vocabulary, and character lookups. These
+actions run only when you click a link or invoke the relevant keyboard shortcut.
+The selected word or character is included in the URL sent to the chosen site.
+Depending on the action, destinations include LINE Dict, Forvo, Dict.cn, iCIBA,
+MDBG, Reverso, MoeDict, Tatoeba, AllSet Learning, Baidu Hanyu, Zdic,
+YellowBridge, and zi.tools.
+
+The `Shift+S` Skritter shortcut calls Skritter's add-to-vocabulary endpoint to
+add the current dictionary entry to your Skritter queue. Its URL sends the
+entry's simplified form, traditional form, reading, and English definition to
+Skritter. The destination's own privacy policy and terms apply.
 
 ## Permissions
 

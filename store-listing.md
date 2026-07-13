@@ -45,8 +45,11 @@ and Anki/Pleco export.
 - Text is sent to a third-party AI service only when you actively use the
   sentence-breakdown feature, and only to the provider you configured, using
   your own API key.
-- External dictionary, thesaurus, example-sentence, grammar, vocabulary, and
-  Skritter shortcuts open the selected word in the chosen third-party site.
+- External dictionary, thesaurus, example-sentence, grammar, and vocabulary
+  shortcuts open the selected word in the chosen third-party site.
+- Shift+S calls Skritter's add-to-vocabulary endpoint and sends the entry's
+  simplified form, traditional form, reading, and English definition to add it
+  to your Skritter queue.
 - Full privacy policy:
   https://github.com/Proe24/zhongwen-enhanced/blob/master/PRIVACY.md
 

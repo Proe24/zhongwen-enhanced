@@ -1,6 +1,12 @@
 # Builds a clean Chrome Web Store ZIP of Zhongwen Enhanced.
 # Usage:  powershell -ExecutionPolicy Bypass -File build.ps1
 
+param(
+    # Overridable only so the failure path can be exercised without altering
+    # the caller's real npm installation.
+    [string]$NpmCommand = 'npm'
+)
+
 $ErrorActionPreference = 'Stop'
 
 $root    = $PSScriptRoot
@@ -20,9 +26,9 @@ $include = @(
 # Refuse to package a release unless the complete repository gate passes.
 Push-Location $root
 try {
-    & npm ci --ignore-scripts
+    & $NpmCommand ci --ignore-scripts
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed (exit $LASTEXITCODE)." }
-    & npm run check
+    & $NpmCommand run check
     if ($LASTEXITCODE -ne 0) { throw "Repository checks failed (exit $LASTEXITCODE)." }
 } finally {
     Pop-Location

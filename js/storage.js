@@ -28,6 +28,18 @@
 
     let migrationPromise = null;
 
+    function getLocal(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, result => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(result || {});
+                }
+            });
+        });
+    }
+
     function setLocal(obj) {
         return new Promise((resolve, reject) => {
             chrome.storage.local.set(obj, () => {
@@ -54,36 +66,38 @@
 
     function migrate() {
         if (migrationPromise) return migrationPromise;
-        migrationPromise = new Promise((resolve, reject) => {
-            chrome.storage.local.get('mv3Migrated', result => {
-                if (result.mv3Migrated) { resolve(); return; }
-                let toWrite = { mv3Migrated: true };
-                try {
-                    MIGRATABLE_KEYS.forEach(k => {
-                        let v = localStorage[k];
-                        if (v !== undefined) toWrite[k] = v;
-                    });
-                } catch (e) { /* localStorage unavailable */ }
-                setLocal(toWrite).then(() => {
-                    try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
-                    resolve();
-                }, reject);
+        migrationPromise = getLocal('mv3Migrated').then(result => {
+            if (result.mv3Migrated) return;
+            let toWrite = { mv3Migrated: true };
+            try {
+                MIGRATABLE_KEYS.forEach(k => {
+                    let v = localStorage[k];
+                    if (v !== undefined) toWrite[k] = v;
+                });
+            } catch (e) { /* localStorage unavailable */ }
+            return setLocal(toWrite).then(() => {
+                try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
             });
+        }).catch(error => {
+            // A transient failure must not poison every later storage request
+            // for the lifetime of the extension page.
+            migrationPromise = null;
+            throw error;
         });
         return migrationPromise;
     }
 
     function get(keys) {
-        return migrate().then(() => new Promise(resolve => {
+        return migrate().then(() => {
             let queryKeys = Array.isArray(keys) ? keys : (keys ? [keys] : Object.keys(DEFAULTS));
-            chrome.storage.local.get(queryKeys, result => {
+            return getLocal(queryKeys).then(result => {
                 let out = {};
                 queryKeys.forEach(k => {
                     out[k] = result[k] !== undefined ? result[k] : DEFAULTS[k];
                 });
-                resolve(out);
+                return out;
             });
-        }));
+        });
     }
 
     function set(key, value) {
@@ -95,9 +109,7 @@
     }
 
     function getRaw(keys) {
-        return migrate().then(() => new Promise(resolve => {
-            chrome.storage.local.get(keys, resolve);
-        }));
+        return migrate().then(() => getLocal(keys));
     }
 
     function setRaw(obj) {
