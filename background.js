@@ -55,18 +55,23 @@ import { ZhongwenDictionary } from './dict.js';
 
 const OPTION_KEYS = [
     'tonecolors', 'skritterTLD', 'zhuyin', 'grammar', 'vocab', 'simpTrad',
-    'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'defView', 'popupScale'
+    'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'defView',
+    'popupScale', 'saveToWordList'
 ];
 const OPTION_DEFAULTS = {
     tonecolors: 'yes', skritterTLD: 'com', zhuyin: 'no', grammar: 'yes',
     vocab: 'yes', simpTrad: 'classic', toneColorScheme: 'standard',
     direction: 'vellum', mode: 'light', density: 'regular', hanziFont: 'serif',
-    defView: 'full', popupScale: '1'
+    defView: 'full', popupScale: '1', saveToWordList: 'allEntries'
 };
 
 let isActivated = false;
+let activationGeneration = 0;
+let resolveActivationStateReady;
+const activationStateReady = new Promise(resolve => { resolveActivationStateReady = resolve; });
 let tabIDs = {};
 let dict;
+let dictLoading;
 let thesaurus;        // word -> [synonyms], lazily loaded from data/thesaurus.json
 let thesaurusLoading; // in-flight load promise, so concurrent lookups share one fetch
 
@@ -75,7 +80,15 @@ function getStorage(keys) {
 }
 
 function setStorage(obj) {
-    return new Promise(resolve => chrome.storage.local.set(obj, resolve));
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.set(obj, function () {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                resolve();
+            }
+        });
+    });
 }
 
 async function getOptions() {
@@ -86,34 +99,42 @@ async function getOptions() {
 }
 
 async function activateExtension(tabId, showHelp) {
+    let generation = ++activationGeneration;
     isActivated = true;
-    await setStorage({ enabled: '1' });
-
-    if (!dict) {
-        loadDictionary().then(r => dict = r);
+    try {
+        await setStorage({ enabled: '1' });
+    } catch (error) {
+        if (generation === activationGeneration) isActivated = false;
+        throw error;
     }
+    await ensureDictionary();
+    if (!isActivated || generation !== activationGeneration) return;
 
     let options = await getOptions();
+    if (!isActivated || generation !== activationGeneration) return;
 
     try {
         await chrome.tabs.sendMessage(tabId, { type: 'enable', config: options });
     } catch (e) { /* tab may not have content script (chrome:// etc.) */ }
+    if (!isActivated || generation !== activationGeneration) return;
 
     if (showHelp) {
         try {
             await chrome.tabs.sendMessage(tabId, { type: 'showHelp' });
-        } catch (e) {}
+        } catch (e) { /* tab may not have a content script */ }
     }
+    if (!isActivated || generation !== activationGeneration) return;
 
+    await rebuildContextMenus(generation);
+    if (!isActivated || generation !== activationGeneration) return;
     chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
     chrome.action.setBadgeText({ text: 'On' });
-
-    await rebuildContextMenus();
     await updateIcon();
 }
 
-async function rebuildContextMenus() {
+async function rebuildContextMenus(generation) {
     await new Promise(resolve => chrome.contextMenus.removeAll(resolve));
+    if (!isActivated || generation !== activationGeneration) return;
     chrome.contextMenus.create({ id: 'open-wordlist', title: 'Open word list', contexts: ['all'] });
     chrome.contextMenus.create({ id: 'show-help', title: 'Show help in new tab', contexts: ['all'] });
     chrome.contextMenus.create({
@@ -177,6 +198,19 @@ async function loadDictionary() {
     return new ZhongwenDictionary(wordDict, wordIndex, grammarKeywords, vocabKeywords);
 }
 
+function ensureDictionary() {
+    if (dict) return Promise.resolve(dict);
+    if (!dictLoading) {
+        dictLoading = loadDictionary()
+            .then(result => {
+                dict = result;
+                return result;
+            })
+            .finally(() => { dictLoading = null; });
+    }
+    return dictLoading;
+}
+
 // Lazily load the offline thesaurus (Chinese Open Wordnet, CC BY 3.0).
 function loadThesaurus() {
     if (thesaurus) return Promise.resolve(thesaurus);
@@ -197,14 +231,21 @@ async function findSynonyms(simplified, traditional) {
 }
 
 async function deactivateExtension() {
+    let generation = ++activationGeneration;
     isActivated = false;
-    await setStorage({ enabled: '0' });
-    dict = undefined;
+    try {
+        await setStorage({ enabled: '0' });
+    } catch (error) {
+        if (generation === activationGeneration) isActivated = true;
+        throw error;
+    }
+    if (isActivated || generation !== activationGeneration) return;
 
     chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
     chrome.action.setBadgeText({ text: '' });
 
     chrome.windows.getAll({ populate: true }, function (windows) {
+        if (isActivated || generation !== activationGeneration) return;
         for (let i = 0; i < windows.length; ++i) {
             let tabs = windows[i].tabs;
             for (let j = 0; j < tabs.length; ++j) {
@@ -217,6 +258,7 @@ async function deactivateExtension() {
 }
 
 async function activateExtensionToggle(currentTab) {
+    await activationStateReady;
     if (isActivated) {
         await deactivateExtension();
     } else {
@@ -311,16 +353,17 @@ let breakdownCacheKeys = [];
 const CACHE_MAX = 50;
 let lastRequestTime = 0;
 const MIN_REQUEST_GAP = 2000;
-let inflightSentence = null;
+let providerQueue = Promise.resolve();
+let inflightBreakdowns = new Map();
 
-function cacheGet(sentence) {
-    return breakdownCache[sentence] || null;
+function cacheGet(key) {
+    return breakdownCache[key] || null;
 }
 
-function cachePut(sentence, response) {
-    if (breakdownCache[sentence]) return;
-    breakdownCache[sentence] = response;
-    breakdownCacheKeys.push(sentence);
+function cachePut(key, response) {
+    if (breakdownCache[key]) return;
+    breakdownCache[key] = response;
+    breakdownCacheKeys.push(key);
     if (breakdownCacheKeys.length > CACHE_MAX) {
         let old = breakdownCacheKeys.shift();
         delete breakdownCache[old];
@@ -385,100 +428,185 @@ function extractText(provider, data) {
     return '';
 }
 
-function handleBreakdown(request, callback) {
-    let sentence = request.sentence || '';
-
-    let cached = cacheGet(sentence);
-    if (cached) { callback(cached); return; }
-
-    if (inflightSentence === sentence) {
-        callback({ error: 'Request already in progress for this sentence.' });
-        return;
-    }
-
-    chrome.storage.local.get(
-        ['aiProvider', 'anthropicApiKey', 'geminiApiKey', 'openaiApiKey'],
-        function (result) {
-            let provider = result.aiProvider || 'gemini';
-            let keyMap = {
-                anthropic: result.anthropicApiKey,
-                gemini: result.geminiApiKey,
-                openai: result.openaiApiKey
-            };
-            let apiKey = keyMap[provider];
-            if (!apiKey) {
-                callback({ error: 'No API key set for ' + provider + '. Open Zhongwen Options to add one.' });
-                return;
-            }
-
-            let now = Date.now();
-            let wait = Math.max(0, MIN_REQUEST_GAP - (now - lastRequestTime));
-
-            inflightSentence = sentence;
-
-            setTimeout(function () {
-                lastRequestTime = Date.now();
-
-                function doFetch(retryCount) {
-                    callProvider(provider, apiKey, request.prompt)
-                        .then(r => {
-                            if (r.status === 429 && retryCount < 1) {
-                                let retryAfter = 5000;
-                                let ra = r.headers.get('retry-after');
-                                if (ra) retryAfter = Math.min(parseInt(ra, 10) * 1000 || 5000, 30000);
-                                return new Promise(resolve => setTimeout(resolve, retryAfter))
-                                    .then(() => doFetch(retryCount + 1));
-                            }
-                            if (!r.ok) return r.text().then(t => { throw new Error('API ' + r.status + ': ' + t); });
-                            return r.json();
-                        })
-                        .then(data => {
-                            if (!data) return;
-                            let text = extractText(provider, data);
-                            let providerNames = { anthropic: 'Claude', gemini: 'Gemini', openai: 'ChatGPT' };
-                            let response = { text: text, provider: providerNames[provider] || provider };
-                            cachePut(sentence, response);
-                            inflightSentence = null;
-                            callback(response);
-                        })
-                        .catch(err => {
-                            inflightSentence = null;
-                            callback({ error: err.message || 'Unknown error' });
-                        });
-                }
-
-                doFetch(0);
-            }, wait);
-        }
-    );
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function handleAdd(request) {
-    let { wordlist: json, saveToWordList } = await getStorage(['wordlist', 'saveToWordList']);
-    let saveFirstEntryOnly = saveToWordList === 'firstEntryOnly';
+function enqueueProviderCall(task) {
+    let run = providerQueue.then(async function () {
+        let wait = Math.max(0, MIN_REQUEST_GAP - (Date.now() - lastRequestTime));
+        if (wait) await delay(wait);
+        lastRequestTime = Date.now();
+        return task();
+    });
+    providerQueue = run.catch(() => {});
+    return run;
+}
 
-    let wordlist = json ? JSON.parse(json) : [];
-    let listName = request.list || '';
-
-    for (let i in request.entries) {
-        let src = request.entries[i];
-        let entry = {};
-        entry.timestamp = Date.now();
-        entry.simplified = src.simplified;
-        entry.traditional = src.traditional;
-        entry.pinyin = src.pinyin;
-        entry.definition = src.definition;
-        if (src.isSentence) entry.isSentence = true;
-        if (src.notes) entry.notes = src.notes;
-        if (src.box) entry.box = src.box;
-        if (src.breakdown) entry.breakdown = src.breakdown;
-        if (listName) entry.list = listName;
-
-        wordlist.push(entry);
-
-        if (saveFirstEntryOnly) break;
+async function fetchProviderResponse(provider, apiKey, prompt, retryCount) {
+    let response = await callProvider(provider, apiKey, prompt);
+    if (response.status === 429 && retryCount < 1) {
+        let retryAfter = 5000;
+        let header = response.headers.get('retry-after');
+        if (header) retryAfter = Math.min(parseInt(header, 10) * 1000 || 5000, 30000);
+        await delay(retryAfter);
+        return fetchProviderResponse(provider, apiKey, prompt, retryCount + 1);
     }
-    await setStorage({ wordlist: JSON.stringify(wordlist) });
+    if (!response.ok) {
+        let body = await response.text();
+        throw new Error('API ' + response.status + ': ' + body);
+    }
+    return response.json();
+}
+
+async function performBreakdown(request) {
+    let sentence = request.sentence || '';
+    let result = await getStorage(
+        ['aiProvider', 'anthropicApiKey', 'geminiApiKey', 'openaiApiKey']
+    );
+    let provider = result.aiProvider || 'gemini';
+    let keyMap = {
+        anthropic: result.anthropicApiKey,
+        gemini: result.geminiApiKey,
+        openai: result.openaiApiKey
+    };
+    let apiKey = keyMap[provider];
+    let providerNames = { anthropic: 'Claude', gemini: 'Gemini', openai: 'ChatGPT' };
+    let providerName = providerNames[provider] || provider;
+    if (!apiKey) {
+        return {
+            error: 'No API key set for ' + provider + '. Open Zhongwen Options to add one.',
+            provider: providerName
+        };
+    }
+
+    let key = provider + '\n' + sentence;
+    let cached = cacheGet(key);
+    if (cached) return cached;
+    if (inflightBreakdowns.has(key)) return inflightBreakdowns.get(key);
+
+    let pending = enqueueProviderCall(async function () {
+        let data = await fetchProviderResponse(provider, apiKey, request.prompt, 0);
+        let response = { text: extractText(provider, data), provider: providerName };
+        cachePut(key, response);
+        return response;
+    }).catch(err => ({
+        error: err.message || 'Unknown error',
+        provider: providerName
+    })).finally(() => {
+        if (inflightBreakdowns.get(key) === pending) inflightBreakdowns.delete(key);
+    });
+
+    inflightBreakdowns.set(key, pending);
+    return pending;
+}
+
+function handleBreakdown(request, callback) {
+    performBreakdown(request).then(callback);
+}
+
+let wordlistQueue = Promise.resolve();
+
+function createEntryId() {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+function enqueueWordlistTask(task) {
+    let run = wordlistQueue.then(task);
+    wordlistQueue = run.catch(() => { /* keep later mutations running */ });
+    return run;
+}
+
+async function readWordlist() {
+    let { wordlist: json } = await getStorage('wordlist');
+    let entries;
+    try {
+        entries = json ? JSON.parse(json) : [];
+    } catch (error) {
+        throw new Error('Saved word list is not valid JSON.');
+    }
+    if (!Array.isArray(entries)) throw new Error('Saved word list has an invalid format.');
+
+    let changed = false;
+    entries.forEach(entry => {
+        if (!entry.id) {
+            entry.id = createEntryId();
+            changed = true;
+        }
+    });
+    if (changed) await setStorage({ wordlist: JSON.stringify(entries) });
+    return entries;
+}
+
+function handleAdd(request) {
+    return enqueueWordlistTask(async function () {
+        let [wordlist, options] = await Promise.all([
+            readWordlist(),
+            getStorage('saveToWordList')
+        ]);
+        let saveFirstEntryOnly = request.saveMode !== 'all' &&
+            options.saveToWordList === 'firstEntryOnly';
+        let listName = request.list || '';
+
+        for (let src of request.entries || []) {
+            let entry = {
+                id: createEntryId(),
+                timestamp: Date.now(),
+                simplified: src.simplified,
+                traditional: src.traditional,
+                pinyin: src.pinyin,
+                definition: src.definition
+            };
+            if (src.isSentence) entry.isSentence = true;
+            if (src.notes) entry.notes = src.notes;
+            if (src.box) entry.box = src.box;
+            if (src.breakdown) entry.breakdown = src.breakdown;
+            if (listName) entry.list = listName;
+            wordlist.push(entry);
+            if (saveFirstEntryOnly) break;
+        }
+        await setStorage({ wordlist: JSON.stringify(wordlist) });
+        return wordlist;
+    });
+}
+
+function mutateWordlist(request) {
+    return enqueueWordlistTask(async function () {
+        let wordlist = await readWordlist();
+        let ids = new Set(request.ids || []);
+
+        switch (request.operation) {
+            case 'delete':
+                wordlist = wordlist.filter(entry => !ids.has(entry.id));
+                break;
+            case 'move':
+                wordlist.forEach(entry => {
+                    if (ids.has(entry.id)) entry.list = request.list || '';
+                });
+                break;
+            case 'rename-list':
+                wordlist.forEach(entry => {
+                    if ((entry.list || '') === request.oldName) entry.list = request.newName || '';
+                });
+                break;
+            case 'update': {
+                let entry = wordlist.find(item => item.id === request.id);
+                if (entry) {
+                    let patch = request.patch || {};
+                    ['notes', 'box', 'lastReviewed'].forEach(key => {
+                        if (Object.prototype.hasOwnProperty.call(patch, key)) entry[key] = patch[key];
+                    });
+                }
+                break;
+            }
+            default:
+                throw new Error('Unknown word-list operation: ' + request.operation);
+        }
+
+        await setStorage({ wordlist: JSON.stringify(wordlist) });
+        return wordlist;
+    });
 }
 
 chrome.runtime.onMessage.addListener(function (request, sender, callback) {
@@ -488,11 +616,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
     switch (request.type) {
 
         case 'search': {
-            let response = search(request.text);
-            if (response) response.originalText = request.originalText;
-            callback(response);
+            ensureDictionary().then(() => {
+                let response = search(request.text);
+                if (response) response.originalText = request.originalText;
+                callback(response);
+            }).catch(() => callback());
+            return true;
         }
-            break;
 
         case 'open': {
             tabID = tabIDs[request.tabType];
@@ -515,9 +645,24 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
             break;
 
         case 'add': {
-            handleAdd(request);
+            handleAdd(request).then(() => callback({ ok: true }))
+                .catch(error => callback({ error: error.message }));
+            return true;
         }
-            break;
+
+        case 'wordlist-get': {
+            enqueueWordlistTask(readWordlist)
+                .then(entries => callback({ entries: entries }))
+                .catch(error => callback({ error: error.message }));
+            return true;
+        }
+
+        case 'wordlist-mutate': {
+            mutateWordlist(request)
+                .then(entries => callback({ entries: entries }))
+                .catch(error => callback({ error: error.message }));
+            return true;
+        }
 
         case 'breakdown': {
             handleBreakdown(request, callback);
@@ -536,13 +681,22 @@ chrome.runtime.onMessage.addListener(function (request, sender, callback) {
 // On service-worker startup, restore activation state from storage so the
 // badge and dictionary come back when the worker wakes from idle.
 (async function init() {
-    let { enabled } = await getStorage('enabled');
-    if (enabled === '1') {
-        isActivated = true;
-        loadDictionary().then(r => dict = r);
-        chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
-        chrome.action.setBadgeText({ text: 'On' });
-        await rebuildContextMenus();
-        await updateIcon();
+    let generation = ++activationGeneration;
+    try {
+        let { enabled } = await getStorage('enabled');
+        if (generation !== activationGeneration) return;
+        if (enabled === '1') {
+            isActivated = true;
+            resolveActivationStateReady();
+            await ensureDictionary();
+            if (!isActivated || generation !== activationGeneration) return;
+            await rebuildContextMenus(generation);
+            if (!isActivated || generation !== activationGeneration) return;
+            chrome.action.setBadgeBackgroundColor({ color: [255, 0, 0, 255] });
+            chrome.action.setBadgeText({ text: 'On' });
+            await updateIcon();
+        }
+    } finally {
+        resolveActivationStateReady();
     }
 })();

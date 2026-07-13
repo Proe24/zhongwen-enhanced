@@ -22,8 +22,8 @@ original work, with the year of change:
   can be sent to a user-chosen AI provider (Anthropic Claude, Google
   Gemini, or OpenAI) using the user's own API key, returning a
   word-by-word grammatical breakdown.
-- **2026** — Added named vocabulary lists, sentence storage, and study
-  (spaced-repetition box) features.
+- **2026** — Added named vocabulary lists, sentence storage, and flashcard
+  study features.
 - **2026** — Added export to Anki and Pleco formats.
 - **2026** — Migrated the extension from Manifest V2 to Manifest V3
   (service worker background script).

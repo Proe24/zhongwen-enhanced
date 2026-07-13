@@ -44,8 +44,6 @@
 
  */
 
-/* global globalThis */
-
 'use strict';
 
 let config;
@@ -120,8 +118,8 @@ function disableTab() {
     let panel = document.getElementById('zhongwen-panel');
     if (panel) {
         panel.parentNode.removeChild(panel);
-        panelOpen = false;
     }
+    invalidatePanelSession();
 
     clearHighlight();
 }
@@ -129,6 +127,38 @@ function disableTab() {
 // ── Sentence Breakdown Panel ─────────────────────────────────────────
 
 let panelOpen = false;
+let panelGeneration = 0;
+let activePanelKind = '';
+let activePanelKey = '';
+
+function beginPanelSession(kind, key) {
+    if (panelOpen && activePanelKind === kind && activePanelKey === key) return null;
+    panelGeneration++;
+    panelOpen = true;
+    activePanelKind = kind;
+    activePanelKey = key;
+    return panelGeneration;
+}
+
+function isCurrentPanelSession(generation) {
+    return panelOpen && panelGeneration === generation;
+}
+
+function invalidatePanelSession() {
+    panelGeneration++;
+    panelOpen = false;
+    activePanelKind = '';
+    activePanelKey = '';
+}
+
+function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 function getSurroundingSentence() {
     if (!savedRangeNode || !savedRangeNode.textContent) return '';
@@ -205,12 +235,10 @@ function createPanel() {
     return panel;
 }
 
-let lastPanelSentence = '';
-
 function openPanel(sentence) {
     if (!sentence) return;
-    if (panelOpen && sentence === lastPanelSentence) return;
-    lastPanelSentence = sentence;
+    let generation = beginPanelSession('sentence', sentence);
+    if (generation === null) return;
     let panel = createPanel();
     panel.setAttribute('data-direction', config.direction || 'vellum');
     panel.setAttribute('data-mode', config.mode || 'light');
@@ -219,13 +247,14 @@ function openPanel(sentence) {
     let scroll = document.getElementById('zhongwen-panel-scroll');
 
     scroll.innerHTML =
-        '<div class="src-sentence">' + sentence + '</div>' +
+        '<div class="src-sentence">' + escapeHtml(sentence) + '</div>' +
         '<div class="ai-status" id="zhongwen-panel-status">' +
             '<span class="dot"></span><span class="dot"></span><span class="dot"></span>' +
             '<span>Analyzing sentence…</span>' +
         '</div>';
 
     chrome.storage.local.get('aiProvider', function (result) {
+        if (!isCurrentPanelSession(generation)) return;
         let names = { anthropic: 'Claude', gemini: 'Gemini', openai: 'ChatGPT' };
         let name = names[result.aiProvider] || 'AI';
         let el = document.getElementById('zhongwen-panel-status');
@@ -234,9 +263,8 @@ function openPanel(sentence) {
             '<span>Asking ' + name + ' to break down sentence…</span>';
     });
 
-    panelOpen = true;
     requestAnimationFrame(function () {
-        panel.classList.add('is-open');
+        if (isCurrentPanelSession(generation)) panel.classList.add('is-open');
     });
 
     chrome.runtime.sendMessage({
@@ -244,7 +272,7 @@ function openPanel(sentence) {
         sentence: sentence,
         prompt: buildBreakdownPrompt(sentence)
     }, function (response) {
-        if (!panelOpen) return;
+        if (!isCurrentPanelSession(generation)) return;
         if (!response || response.error) {
             let errMsg = (response && response.error) || 'Unknown error';
             let providerLabel = (response && response.provider) || 'the AI provider';
@@ -261,30 +289,30 @@ function openPanel(sentence) {
                 friendly = errMsg.length > 200 ? errMsg.substring(0, 200) + '…' : errMsg;
             }
             scroll.innerHTML =
-                '<div class="src-sentence">' + sentence + '</div>' +
+                '<div class="src-sentence">' + escapeHtml(sentence) + '</div>' +
                 '<div class="grammar-notes" style="border-left-color:var(--tone-1)">' +
-                    '<strong>Could not reach ' + providerLabel + '.</strong>' +
-                    '<p style="margin:6px 0 0;font-size:13px">' + friendly + '</p>' +
+                    '<strong>Could not reach ' + escapeHtml(providerLabel) + '.</strong>' +
+                    '<p style="margin:6px 0 0;font-size:13px">' + escapeHtml(friendly) + '</p>' +
                 '</div>';
             return;
         }
         let providerName = response.provider || 'AI';
-        let data = parseAIResponse(response.text);
+        let data = normalizeBreakdownData(parseAIResponse(response.text));
         if (data) {
             renderBreakdown(scroll, sentence, data, providerName);
         } else {
-            renderRawFallback(scroll, sentence, response.text, providerName);
+            renderRawFallback(scroll, sentence, String(response.text || ''), providerName);
         }
     });
 }
 
 function renderBreakdown(scroll, sentence, data, providerName) {
     let html = '';
-    html += '<div class="src-sentence">' + sentence + '</div>';
+    html += '<div class="src-sentence">' + escapeHtml(sentence) + '</div>';
 
     html += '<div class="translation-grid">';
-    html += '<div class="trans-card idiomatic"><div class="label">Idiomatic</div><div class="text">' + (data.idiomatic || '') + '</div></div>';
-    html += '<div class="trans-card literal"><div class="label">Literal</div><div class="text">' + (data.literal || '') + '</div></div>';
+    html += '<div class="trans-card idiomatic"><div class="label">Idiomatic</div><div class="text">' + escapeHtml(data.idiomatic) + '</div></div>';
+    html += '<div class="trans-card literal"><div class="label">Literal</div><div class="text">' + escapeHtml(data.literal) + '</div></div>';
     html += '</div>';
 
     if (data.words && data.words.length > 0) {
@@ -295,9 +323,9 @@ function renderBreakdown(scroll, sentence, data, providerName) {
             html += '<div class="hz">' + toneColorHanziNumbered(w.hz, w.py) + '</div>';
             html += '<div class="meta">';
             html += '<div class="py">' + formatNumberedPinyin(w.py) + '</div>';
-            html += '<div class="gloss">' + (w.gloss || '') + '</div>';
+            html += '<div class="gloss">' + escapeHtml(w.gloss) + '</div>';
             if (w.role && w.role !== 'other') {
-                html += '<div class="role">' + w.role + '</div>';
+                html += '<div class="role">' + escapeHtml(w.role) + '</div>';
             }
             html += '</div>';
             html += '<button class="add-word" data-word-idx="' + i + '" title="Add to word list">+</button>';
@@ -310,30 +338,41 @@ function renderBreakdown(scroll, sentence, data, providerName) {
         html += '<div class="section-label">Grammar notes</div>';
         html += '<div class="grammar-notes"><ul>';
         data.grammar.forEach(function (g) {
-            let formatted = g.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            let formatted = escapeHtml(g).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             html += '<li>' + formatted + '</li>';
         });
         html += '</ul></div>';
     }
 
     html += '<div class="ai-foot">';
-    html += '<span>Generated by ' + (providerName || 'AI') + '</span>';
+    html += '<span>Generated by ' + escapeHtml(providerName || 'AI') + '</span>';
     html += '<button class="save" id="zhongwen-panel-save">Save sentence</button>';
     html += '</div>';
 
     scroll.innerHTML = html;
 
-    document.getElementById('zhongwen-panel-save').addEventListener('click', function () {
-        saveSentence(sentence, data);
-        this.classList.add('is-saved');
-        this.textContent = '✓ Saved';
+    scroll.querySelector('#zhongwen-panel-save').addEventListener('click', function () {
+        let button = this;
+        button.disabled = true;
+        saveSentence(sentence, data, function (error) {
+            button.disabled = false;
+            if (error) {
+                button.textContent = 'Save failed';
+                button.title = error;
+            } else {
+                button.classList.add('is-saved');
+                button.textContent = '✓ Saved';
+            }
+        });
     });
 
     scroll.querySelectorAll('.add-word').forEach(function (btn) {
         btn.addEventListener('click', function () {
             let w = data.words[parseInt(this.dataset.wordIdx)];
             if (!w) return;
-            chrome.runtime.sendMessage({
+            let button = this;
+            button.disabled = true;
+            sendAddRequest({
                 type: 'add',
                 entries: [{
                     simplified: w.hz,
@@ -342,14 +381,45 @@ function renderBreakdown(scroll, sentence, data, providerName) {
                     definition: w.gloss || ''
                 }],
                 list: document.title || document.location.hostname
+            }, function (error) {
+                button.disabled = false;
+                if (error) {
+                    button.textContent = '!';
+                    button.title = error;
+                } else {
+                    button.classList.add('is-saved');
+                    button.textContent = '✓';
+                }
             });
-            this.classList.add('is-saved');
-            this.textContent = '✓';
         });
     });
 }
 
+function normalizeBreakdownData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+    let words = Array.isArray(data.words) ? data.words : [];
+    words = words.filter(word => word && typeof word === 'object').map(word => ({
+        hz: String(word.hz === null || word.hz === undefined ? '' : word.hz),
+        py: String(word.py === null || word.py === undefined ? '' : word.py),
+        gloss: String(word.gloss === null || word.gloss === undefined ? '' : word.gloss),
+        role: String(word.role === null || word.role === undefined ? 'other' : word.role)
+    })).filter(word => word.hz || word.py || word.gloss);
+
+    let grammar = Array.isArray(data.grammar)
+        ? data.grammar.filter(note => typeof note === 'string')
+        : [];
+
+    return {
+        literal: String(data.literal === null || data.literal === undefined ? '' : data.literal),
+        idiomatic: String(data.idiomatic === null || data.idiomatic === undefined ? '' : data.idiomatic),
+        words: words,
+        grammar: grammar
+    };
+}
+
 function parseAIResponse(text) {
+    if (typeof text !== 'string' || !text.trim()) return null;
     let raw = text.trim();
     // Strip code fences
     raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -359,17 +429,18 @@ function parseAIResponse(text) {
     raw = m[0];
 
     // Strategy 1: direct parse
-    try { return JSON.parse(raw); } catch (e) {}
+    try { return JSON.parse(raw); } catch (e) { /* try the recovery strategies below */ }
 
     // Strategy 2: collapse newlines, fix trailing commas
     let cleaned = raw.replace(/[\r\n]+/g, ' ').replace(/,\s*([\]}])/g, '$1');
-    try { return JSON.parse(cleaned); } catch (e) {}
+    try { return JSON.parse(cleaned); } catch (e) { /* try the recovery strategies below */ }
 
     // Strategy 3: strip control chars, fix smart quotes
+    // eslint-disable-next-line no-control-regex
     cleaned = cleaned.replace(/[\x00-\x1f\x7f]/g, ' ')
                      .replace(/“|”/g, '"')
                      .replace(/‘|’/g, "'");
-    try { return JSON.parse(cleaned); } catch (e) {}
+    try { return JSON.parse(cleaned); } catch (e) { /* fall through to field extraction */ }
 
     // Strategy 4: regex extraction of key fields from near-valid JSON
     try {
@@ -414,7 +485,7 @@ function parseAIResponse(text) {
                 grammar: grammar
             };
         }
-    } catch (e) {}
+    } catch (e) { /* fall through to plain-text parsing */ }
 
     return parseAIPlainText(text);
 }
@@ -450,7 +521,7 @@ function parseAIPlainText(text) {
                 grammar: ptGrammar
             };
         }
-    } catch (e) {}
+    } catch (e) { /* malformed provider output */ }
     return null;
 }
 
@@ -459,15 +530,15 @@ function renderRawFallback(scroll, sentence, text, providerName) {
         .replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '')
         .replace(/[{}[\]"]/g, '').trim();
     let lines = raw.split('\n').filter(function(l) { return l.trim(); });
-    let html = '<div class="src-sentence">' + sentence + '</div>';
+    let html = '<div class="src-sentence">' + escapeHtml(sentence) + '</div>';
     html += '<div class="section-label">AI Analysis</div>';
     html += '<div class="grammar-notes"><ul>';
     lines.forEach(function(line) {
         let cleaned = line.trim().replace(/^[-,]/, '').trim();
-        if (cleaned) html += '<li>' + cleaned + '</li>';
+        if (cleaned) html += '<li>' + escapeHtml(cleaned) + '</li>';
     });
     html += '</ul></div>';
-    html += '<div class="ai-foot"><span>Raw response from ' + (providerName || 'AI') + ' (could not parse structured data)</span></div>';
+    html += '<div class="ai-foot"><span>Raw response from ' + escapeHtml(providerName || 'AI') + ' (could not parse structured data)</span></div>';
     scroll.innerHTML = html;
 }
 
@@ -481,7 +552,7 @@ function toneColorHanziNumbered(hanzi, numberedPinyin) {
             let m = syllables[i].match(/[1-5]$/);
             if (m) tone = parseInt(m[0]);
         }
-        html += '<span class="tone' + tone + '">' + chars[i] + '</span>';
+        html += '<span class="tone' + tone + '">' + escapeHtml(chars[i]) + '</span>';
     }
     return html;
 }
@@ -502,15 +573,23 @@ function formatNumberedPinyin(py) {
         let parsed = parse(s);
         if (parsed) {
             let t = tonify(parsed[2], parsed[4]);
-            let marked = parsed[1] + t[0] + parsed[3];
-            return '<span class="tone' + parsed[4] + '">' + marked + '</span>';
+            let marked = parsed[1] + t[1] + parsed[3];
+            return '<span class="tone' + parsed[4] + '">' + escapeHtml(marked) + '</span>';
         }
         let tone = toneFromMark(s);
-        return '<span class="tone' + tone + '">' + s + '</span>';
+        return '<span class="tone' + tone + '">' + escapeHtml(s) + '</span>';
     }).join(' ');
 }
 
-function saveSentence(sentence, data) {
+function toneFromMark(syllable) {
+    if (/[āēīōūǖ]/.test(syllable)) return 1;
+    if (/[áéíóúǘ]/.test(syllable)) return 2;
+    if (/[ǎěǐǒǔǚ]/.test(syllable)) return 3;
+    if (/[àèìòùǜ]/.test(syllable)) return 4;
+    return 5;
+}
+
+function saveSentence(sentence, data, callback) {
     let pinyin = data.words ? data.words.map(function (w) { return w.py; }).join(' ') : '';
     let entry = {
         simplified: sentence,
@@ -528,15 +607,17 @@ function saveSentence(sentence, data) {
             grammar: data.grammar || []
         }
     };
-    chrome.runtime.sendMessage({ 'type': 'add', 'entries': [entry], 'list': document.title || document.location.hostname });
+    sendAddRequest({
+        type: 'add', entries: [entry], list: document.title || document.location.hostname
+    }, callback);
 }
 
 function closePanel() {
     let panel = document.getElementById('zhongwen-panel');
     if (panel) {
         panel.classList.remove('is-open');
-        panelOpen = false;
     }
+    invalidatePanelSession();
 }
 
 // ── Character Detail Panel (stroke order, decomposition, etymology) ───
@@ -545,7 +626,6 @@ function closePanel() {
 // etymology from Make Me a Hanzi (LGPL-3.0 / Arphic), merged at build time
 // into data/chardata/<codepoint>.json. See tools/build-chardata.js.
 
-let lastPanelWord = '';
 let charWriters = [];
 
 function charCodepoint(ch) {
@@ -621,8 +701,8 @@ function openCharPanel(simplified, traditional) {
     let items = charsWithForms(simplified, traditional);
     if (!items.length) return;
     let word = items.map(it => it.role.charAt(0) + it.ch).join('');
-    if (panelOpen && word === lastPanelWord) return;
-    lastPanelWord = word;
+    let generation = beginPanelSession('character', word);
+    if (generation === null) return;
 
     // Tear down any writers from a previous open.
     charWriters = [];
@@ -653,9 +733,8 @@ function openCharPanel(simplified, traditional) {
     });
     scroll.innerHTML = '<div class="cz-chardetail">' + cards + '</div>';
 
-    panelOpen = true;
     requestAnimationFrame(function () {
-        panel.classList.add('is-open');
+        if (isCurrentPanelSession(generation)) panel.classList.add('is-open');
     });
 
     // Theme-aware stroke colours pulled from the panel's computed styles.
@@ -666,7 +745,7 @@ function openCharPanel(simplified, traditional) {
 
     items.forEach(function (it, i) {
         fetchCharData(charCodepoint(it.ch)).then(function (data) {
-            renderCharCard(it.ch, i, data, colors);
+            if (isCurrentPanelSession(generation)) renderCharCard(it.ch, i, data, colors);
         });
     });
 
@@ -764,13 +843,11 @@ function renderCharCard(ch, key, data, colors) {
 // background script. When a word isn't covered, we link out to an online
 // thesaurus instead (hybrid, offline-first).
 
-let lastThesaurusWord = '';
-
 function openThesaurusPanel(simplified, traditional) {
     let word = simplified || traditional;
     if (!word) return;
-    if (panelOpen && word === lastThesaurusWord) return;
-    lastThesaurusWord = word;
+    let generation = beginPanelSession('thesaurus', word);
+    if (generation === null) return;
 
     let panel = createPanel();
     panel.setAttribute('data-direction', config.direction || 'vellum');
@@ -786,15 +863,16 @@ function openThesaurusPanel(simplified, traditional) {
             '<span>Looking up synonyms…</span>' +
         '</div>';
 
-    panelOpen = true;
-    requestAnimationFrame(function () { panel.classList.add('is-open'); });
+    requestAnimationFrame(function () {
+        if (isCurrentPanelSession(generation)) panel.classList.add('is-open');
+    });
 
     chrome.runtime.sendMessage({
         type: 'thesaurus',
         simplified: simplified,
         traditional: traditional
     }, function (response) {
-        if (!panelOpen || word !== lastThesaurusWord) return;
+        if (!isCurrentPanelSession(generation)) return;
         let synonyms = (response && response.synonyms) || [];
         renderThesaurus(word, synonyms);
     });
@@ -840,7 +918,7 @@ function renderThesaurus(word, synonyms) {
 function saveEntry(index) {
     if (index < 0 || index >= savedSearchResults.length) return;
     let r = savedSearchResults[index];
-    chrome.runtime.sendMessage({
+    sendAddRequest({
         'type': 'add',
         'entries': [{
             simplified: r[0],
@@ -849,18 +927,65 @@ function saveEntry(index) {
             definition: r[3]
         }],
         'list': document.title || document.location.hostname
+    }, function (error) {
+        if (error) {
+            showPopup('<div class="cz-msg">Could not save: ' + escapeHtml(error) + '</div>', null, -1, -1);
+            return;
+        }
+        let msg;
+        if (savedSearchResults.length === 1) {
+            msg = 'Saved to word list.';
+        } else {
+            msg = 'Saved #' + (index + 1) + ' to word list.';
+        }
+        msg += '<br><kbd>Alt+W</kbd> to open word list.';
+        showPopup('<div class="cz-msg">' + msg + '</div>', null, -1, -1);
     });
-    let msg;
-    if (savedSearchResults.length === 1) {
-        msg = 'Saved to word list.';
-    } else {
-        msg = 'Saved #' + (index + 1) + ' to word list.';
+}
+
+function sendAddRequest(request, callback) {
+    chrome.runtime.sendMessage(request, function (response) {
+        let error = chrome.runtime.lastError && chrome.runtime.lastError.message;
+        if (!error && (!response || response.error)) {
+            error = response && response.error || 'No response from background service.';
+        }
+        callback(error || null);
+    });
+}
+
+function saveDisplayedEntries(forceAll) {
+    if (!savedSearchResults.length) return;
+    let all = [];
+    for (let result of savedSearchResults) {
+        all.push({
+            simplified: result[0],
+            traditional: result[1],
+            pinyin: result[2],
+            definition: result[3]
+        });
     }
-    msg += '<br><kbd>Alt+W</kbd> to open word list.';
-    showPopup('<div class="cz-msg">' + msg + '</div>', null, -1, -1);
+    sendAddRequest({
+        type: 'add',
+        entries: all,
+        list: document.title || document.location.hostname,
+        saveMode: forceAll ? 'all' : 'preference'
+    }, function (error) {
+        if (error) {
+            showPopup('<div class="cz-msg">Could not save: ' + escapeHtml(error) + '</div>', null, -1, -1);
+            return;
+        }
+        showPopup(
+            '<div class="cz-msg">Saved to word list.<br><kbd>Alt+W</kbd> to open word list.</div>',
+            null, -1, -1
+        );
+    });
 }
 
 function onKeyDown(keyDown) {
+
+    if (!keyDown.isTrusted) {
+        return;
+    }
 
     if (keyDown.ctrlKey || keyDown.metaKey) {
         return;
@@ -882,6 +1007,16 @@ function onKeyDown(keyDown) {
             tabType: 'wordlist',
             url: '/wordlist.html'
         });
+        return;
+    }
+
+    let target = keyDown.target;
+    let isEditable = target && (
+        target.matches && target.matches('input, textarea, select') || target.isContentEditable
+    );
+    let isExplicitEditableShortcut = keyDown.altKey &&
+        keyDown.keyCode >= 49 && keyDown.keyCode <= 55;
+    if (isEditable && !isExplicitEditableShortcut) {
         return;
     }
 
@@ -993,19 +1128,9 @@ function onKeyDown(keyDown) {
 
         case 82: // 'r'
             if (keyDown.shiftKey && savedSearchResults.length > 0) {
-                let all = [];
-                for (let j = 0; j < savedSearchResults.length; j++) {
-                    all.push({
-                        simplified: savedSearchResults[j][0],
-                        traditional: savedSearchResults[j][1],
-                        pinyin: savedSearchResults[j][2],
-                        definition: savedSearchResults[j][3]
-                    });
-                }
-                chrome.runtime.sendMessage({ 'type': 'add', 'entries': all, 'list': document.title || document.location.hostname });
-                showPopup('<div class="cz-msg">Saved all ' + all.length + ' entries.<br><kbd>Alt+W</kbd> to open word list.</div>', null, -1, -1);
+                saveDisplayedEntries(true);
             } else {
-                saveEntry(0);
+                saveDisplayedEntries(false);
             }
             break;
 
@@ -1164,6 +1289,10 @@ function onKeyDown(keyDown) {
 }
 
 function onMouseMove(mouseMove) {
+    if (!mouseMove.isTrusted) {
+        return;
+    }
+
     if (mouseMove.target.nodeName === 'TEXTAREA' || mouseMove.target.nodeName === 'INPUT'
         || mouseMove.target.nodeName === 'DIV') {
 
@@ -1678,7 +1807,7 @@ function copyToClipboard(data) {
         txt.value = data;
         document.body.appendChild(txt);
         txt.select();
-        try { document.execCommand('copy'); } catch (e) {}
+        try { document.execCommand('copy'); } catch (e) { /* clipboard fallback unavailable */ }
         document.body.removeChild(txt);
     }
 
@@ -1796,7 +1925,7 @@ function renderEntries() {
         html += '<div class="cz-msg">&hellip;</div>';
     }
 
-    let items = ['<kbd>R</kbd>save' + (entries.length > 1 ? ' #1' : '')];
+    let items = [primarySaveHint(entries.length)];
     if (entries.length > 1) {
         items.push('<kbd>1</kbd>–<kbd>' + entries.length + '</kbd>save #');
         items.push('<kbd>Shift+R</kbd>save all');
@@ -1831,10 +1960,17 @@ function renderCompact(entries) {
             + '</div>';
     }
 
-    html += keysRow(['<kbd>R</kbd>save', '<kbd>F</kbd>full view', '<kbd>S</kbd>breakdown',
+    html += keysRow([primarySaveHint(entries.length), '<kbd>F</kbd>full view', '<kbd>S</kbd>breakdown',
         '<kbd>E</kbd>characters', '<kbd>L</kbd>thesaurus', '<kbd>C</kbd>copy', '<kbd>N</kbd>next word']);
 
     return html;
+}
+
+function primarySaveHint(entryCount) {
+    if (entryCount <= 1) return '<kbd>R</kbd>save';
+    return config.saveToWordList === 'firstEntryOnly'
+        ? '<kbd>R</kbd>save #1'
+        : '<kbd>R</kbd>save all';
 }
 
 // Shortcut hints row: collapsed to a single "? shortcuts" affordance by default;

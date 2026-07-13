@@ -28,9 +28,33 @@
 
     let migrationPromise = null;
 
+    function setLocal(obj) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(obj, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    function removeLocal(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.remove(keys, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
     function migrate() {
         if (migrationPromise) return migrationPromise;
-        migrationPromise = new Promise(resolve => {
+        migrationPromise = new Promise((resolve, reject) => {
             chrome.storage.local.get('mv3Migrated', result => {
                 if (result.mv3Migrated) { resolve(); return; }
                 let toWrite = { mv3Migrated: true };
@@ -40,10 +64,10 @@
                         if (v !== undefined) toWrite[k] = v;
                     });
                 } catch (e) { /* localStorage unavailable */ }
-                chrome.storage.local.set(toWrite, () => {
-                    try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) {}
+                setLocal(toWrite).then(() => {
+                    try { MIGRATABLE_KEYS.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
                     resolve();
-                });
+                }, reject);
             });
         });
         return migrationPromise;
@@ -63,11 +87,11 @@
     }
 
     function set(key, value) {
-        return migrate().then(() => new Promise(resolve => {
+        return migrate().then(() => {
             let obj = {};
             obj[key] = value;
-            chrome.storage.local.set(obj, resolve);
-        }));
+            return setLocal(obj);
+        });
     }
 
     function getRaw(keys) {
@@ -77,10 +101,12 @@
     }
 
     function setRaw(obj) {
-        return migrate().then(() => new Promise(resolve => {
-            chrome.storage.local.set(obj, resolve);
-        }));
+        return migrate().then(() => setLocal(obj));
     }
 
-    globalThis.zhongwenStorage = { get, set, getRaw, setRaw, migrate, DEFAULTS };
+    function removeRaw(keys) {
+        return migrate().then(() => removeLocal(keys));
+    }
+
+    globalThis.zhongwenStorage = { get, set, getRaw, setRaw, removeRaw, migrate, DEFAULTS };
 })();

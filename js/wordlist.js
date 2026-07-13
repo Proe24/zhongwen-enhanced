@@ -4,8 +4,6 @@
  https://chrome.google.com/extensions/detail/kkmlkkjojmombglmlpbpapmhcaljjkde
  */
 
-/* global globalThis */
-
 'use strict';
 
 let entries = [];
@@ -17,16 +15,42 @@ let activeSentenceList = null;
 let studyDeck = [];
 let cardIdx = 0;
 let flipped = false;
-let reviewedCount = 0;
-
 let showTradPref = false;
 
+function sendRuntimeMessage(message) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, response => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else if (!response || response.error) {
+                reject(new Error(response && response.error || 'No response from background service.'));
+            } else {
+                resolve(response);
+            }
+        });
+    });
+}
+
+function mutateWordlist(operation) {
+    return sendRuntimeMessage(Object.assign({ type: 'wordlist-mutate' }, operation))
+        .catch(async error => {
+            console.error('Could not save word-list change:', error);
+            alert('Could not save the word-list change: ' + error.message);
+            await loadEntries();
+            selected = new Set();
+            renderTable();
+            if (currentMode === 'study') renderStudy();
+        });
+}
+
 async function loadEntries() {
-    let s = await zhongwenStorage.get(['wordlist', 'simpTrad']);
+    let [s, response] = await Promise.all([
+        zhongwenStorage.get('simpTrad'),
+        sendRuntimeMessage({ type: 'wordlist-get' })
+    ]);
     showTradPref = s.simpTrad === 'classic';
-    let json = s.wordlist;
-    if (json) {
-        entries = JSON.parse(json);
+    entries = response.entries;
+    if (entries.length) {
         entries.forEach(e => {
             e.timestamp = e.timestamp || 0;
             e.box = e.box || 1;
@@ -35,15 +59,6 @@ async function loadEntries() {
     } else {
         entries = [];
     }
-}
-
-function saveEntries() {
-    let toSave = entries.map(e => {
-        let copy = Object.assign({}, e);
-        if (!copy.notes) delete copy.notes;
-        return copy;
-    });
-    zhongwenStorage.set('wordlist', JSON.stringify(toSave));
 }
 
 function toneFromMark(syllable) {
@@ -63,11 +78,6 @@ function toneColorHanzi(hanzi, pinyin) {
         html += '<span class="tone' + tone + '">' + chars[i] + '</span>';
     }
     return html;
-}
-
-function convert2Zhuyin(pinyin) {
-    let a = pinyin.split(/[\s·]+/);
-    return a.map(s => globalThis.accentedPinyin2Zhuyin(s)).join(' ');
 }
 
 function escapeHtml(str) {
@@ -342,7 +352,7 @@ function renderSentences() {
 
 function updateSentenceActions() {
     let sents = getSentenceEntries();
-    let selCount = sents.filter(([_, i]) => selected.has(i)).length;
+    let selCount = sents.filter(([, i]) => selected.has(i)).length;
     let btn = document.getElementById('deleteSentenceBtn');
     btn.disabled = selCount === 0;
     btn.textContent = selCount === 0 ? 'Delete selected' : 'Delete ' + selCount;
@@ -418,9 +428,10 @@ function exportEntries(format) {
 
 function deleteSelected() {
     if (!confirm('Delete ' + selected.size + ' selected entries?')) return;
+    let ids = [...selected].map(index => entries[index].id);
     entries = entries.filter((_, i) => !selected.has(i));
     selected = new Set();
-    saveEntries();
+    mutateWordlist({ operation: 'delete', ids: ids });
     renderTable();
 }
 
@@ -433,19 +444,20 @@ function renameList() {
         if ((e.list || '') === activeList) e.list = newName;
     });
     activeList = newName;
-    saveEntries();
+    mutateWordlist({ operation: 'rename-list', oldName: oldName, newName: newName });
     renderTable();
 }
 
 function moveToList() {
     if (selected.size === 0) return;
-    let lists = Object.keys(getLists()).filter(n => n).sort();
+    let lists = Object.keys(getLists('word')).filter(n => n).sort();
     let msg = 'Enter list name' + (lists.length ? ' (existing: ' + lists.join(', ') + ')' : '') + ':';
     let name = prompt(msg);
     if (name === null) return;
+    let ids = [...selected].map(index => entries[index].id);
     selected.forEach(i => { entries[i].list = name; });
     selected = new Set();
-    saveEntries();
+    mutateWordlist({ operation: 'move', ids: ids, list: name });
     renderTable();
 }
 
@@ -463,7 +475,6 @@ function buildStudyDeck() {
     });
     cardIdx = 0;
     flipped = false;
-    reviewedCount = 0;
     completedCount = 0;
     initialDeckSize = studyDeck.length;
     sessionStreak = new Map();
@@ -530,9 +541,12 @@ function gradeCard(grade) {
     }
     entries[idx].box = Math.min(6, nb);
     entries[idx].lastReviewed = Date.now();
-    saveEntries();
+    mutateWordlist({
+        operation: 'update',
+        id: entries[idx].id,
+        patch: { box: entries[idx].box, lastReviewed: entries[idx].lastReviewed }
+    });
 
-    reviewedCount++;
     flipped = false;
 
     let streak = sessionStreak.get(card) || 0;
@@ -655,19 +669,24 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('tabWords').addEventListener('click', () => setManageTab('words'));
     document.getElementById('tabSentences').addEventListener('click', () => setManageTab('sentences'));
     document.getElementById('deleteSentenceBtn').addEventListener('click', () => {
-        let sents = getSentenceEntries().filter(([_, i]) => selected.has(i));
+        let sents = getSentenceEntries().filter(([, i]) => selected.has(i));
         if (!sents.length || !confirm('Delete ' + sents.length + ' sentence(s)?')) return;
-        let toDelete = new Set(sents.map(([_, i]) => i));
+        let ids = sents.map(([entry]) => entry.id);
+        let toDelete = new Set(sents.map(([, i]) => i));
         entries = entries.filter((_, i) => !toDelete.has(i));
         selected = new Set();
-        saveEntries();
+        mutateWordlist({ operation: 'delete', ids: ids });
         renderTable();
     });
 
     document.getElementById('saveNotes').addEventListener('click', () => {
         if (editingIndex >= 0 && editingIndex < entries.length) {
             entries[editingIndex].notes = document.getElementById('modalNotes').value || '';
-            saveEntries();
+            mutateWordlist({
+                operation: 'update',
+                id: entries[editingIndex].id,
+                patch: { notes: entries[editingIndex].notes }
+            });
             $('#editNotes').modal('hide');
             renderTable();
         }

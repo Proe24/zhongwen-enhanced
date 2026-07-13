@@ -17,6 +17,17 @@ $include = @(
     'LICENSE', 'NOTICE.md', 'PRIVACY.md'
 )
 
+# Refuse to package a release unless the complete repository gate passes.
+Push-Location $root
+try {
+    & npm ci --ignore-scripts
+    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed (exit $LASTEXITCODE)." }
+    & npm run check
+    if ($LASTEXITCODE -ne 0) { throw "Repository checks failed (exit $LASTEXITCODE)." }
+} finally {
+    Pop-Location
+}
+
 # Clean previous output.
 if (Test-Path (Join-Path $root 'dist')) { Remove-Item (Join-Path $root 'dist') -Recurse -Force }
 New-Item -ItemType Directory -Path $stage -Force | Out-Null

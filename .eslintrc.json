@@ -9,7 +9,9 @@
     "globals": {
         "Atomics": "readonly",
         "SharedArrayBuffer": "readonly",
-        "HanziWriter": "readonly"
+        "HanziWriter": "readonly",
+        "globalThis": "readonly",
+        "zhongwenStorage": "readonly"
     },
     "parserOptions": {
         "ecmaVersion": 2018,

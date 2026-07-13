@@ -6,6 +6,40 @@
 
 'use strict';
 
+function errorMessage(error) {
+    return error && error.message ? error.message : String(error);
+}
+
+function showOptionsError(error) {
+    let status = document.getElementById('optionsStatus');
+    if (!status) return;
+    status.textContent = 'Could not save settings: ' + errorMessage(error);
+    status.hidden = false;
+}
+
+function clearOptionsError() {
+    let status = document.getElementById('optionsStatus');
+    if (!status) return;
+    status.textContent = '';
+    status.hidden = true;
+}
+
+async function runOptionUpdate(update, restore) {
+    clearOptionsError();
+    try {
+        await update();
+        return true;
+    } catch (error) {
+        try {
+            await (restore || loadVals)();
+        } catch (restoreError) {
+            console.error('Could not reload persisted settings:', restoreError);
+        }
+        showOptionsError(error);
+        return false;
+    }
+}
+
 async function loadVals() {
     let s = await zhongwenStorage.get();
 
@@ -62,10 +96,9 @@ function applyPopupPreviewTheme(s) {
 
 async function setToneColorScheme(toneColorScheme) {
     if (toneColorScheme === 'none') {
-        await setOption('tonecolors', 'no');
+        await zhongwenStorage.setRaw({ tonecolors: 'no' });
     } else {
-        await setOption('tonecolors', 'yes');
-        await setOption('toneColorScheme', toneColorScheme);
+        await zhongwenStorage.setRaw({ tonecolors: 'yes', toneColorScheme: toneColorScheme });
     }
     let s = await zhongwenStorage.get(['direction', 'mode', 'density', 'hanziFont', 'tonecolors', 'toneColorScheme']);
     applyPopupPreviewTheme(s);
@@ -101,69 +134,70 @@ window.addEventListener('load', () => {
 
     document.querySelectorAll('input[name="toneColors"]').forEach((input) => {
         input.addEventListener('change',
-            () => setToneColorScheme(input.getAttribute('value')));
+            () => runOptionUpdate(() => setToneColorScheme(input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="simpTrad"]').forEach((input) => {
         input.addEventListener('change',
-            () => setOption('simpTrad', input.getAttribute('value')));
+            () => runOptionUpdate(() => setOption('simpTrad', input.getAttribute('value'))));
     });
 
     document.querySelector('#zhuyin').addEventListener('change',
-        (event) => setBooleanOption('zhuyin', event.target.checked));
+        (event) => runOptionUpdate(() => setBooleanOption('zhuyin', event.target.checked)));
 
     document.querySelector('#grammar').addEventListener('change',
-        (event) => setBooleanOption('grammar', event.target.checked));
+        (event) => runOptionUpdate(() => setBooleanOption('grammar', event.target.checked)));
 
     document.querySelector('#vocab').addEventListener('change',
-        (event) => setBooleanOption('vocab', event.target.checked));
+        (event) => runOptionUpdate(() => setBooleanOption('vocab', event.target.checked)));
 
     document.querySelectorAll('input[name="saveToWordList"]').forEach((input) => {
         input.addEventListener('change',
-            () => setOption('saveToWordList', input.getAttribute('value')));
+            () => runOptionUpdate(() => setOption('saveToWordList', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="skritterTLD"]').forEach((input) => {
         input.addEventListener('change',
-            () => setOption('skritterTLD', input.getAttribute('value')));
+            () => runOptionUpdate(() => setOption('skritterTLD', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="direction"]').forEach((input) => {
         input.addEventListener('change',
-            () => setThemeOption('direction', input.getAttribute('value')));
+            () => runOptionUpdate(() => setThemeOption('direction', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="mode"]').forEach((input) => {
         input.addEventListener('change',
-            () => setThemeOption('mode', input.getAttribute('value')));
+            () => runOptionUpdate(() => setThemeOption('mode', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="density"]').forEach((input) => {
         input.addEventListener('change',
-            () => setThemeOption('density', input.getAttribute('value')));
+            () => runOptionUpdate(() => setThemeOption('density', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="hanziFont"]').forEach((input) => {
         input.addEventListener('change',
-            () => setThemeOption('hanziFont', input.getAttribute('value')));
+            () => runOptionUpdate(() => setThemeOption('hanziFont', input.getAttribute('value'))));
     });
 
     document.querySelectorAll('input[name="defView"]').forEach((input) => {
         input.addEventListener('change',
-            () => setOption('defView', input.getAttribute('value')));
+            () => runOptionUpdate(() => setOption('defView', input.getAttribute('value'))));
     });
 
     let scaleSlider = document.getElementById('popupScale');
     let scaleReset = document.getElementById('popupScaleReset');
     if (scaleSlider) {
         scaleSlider.addEventListener('input', () => applyPopupScalePreview(scaleSlider.value));
-        scaleSlider.addEventListener('change', () => setOption('popupScale', scaleSlider.value));
+        scaleSlider.addEventListener('change',
+            () => runOptionUpdate(() => setOption('popupScale', scaleSlider.value)));
     }
     if (scaleReset) {
         scaleReset.addEventListener('click', () => {
             scaleSlider.value = '1';
             applyPopupScalePreview('1');
-            setOption('popupScale', '1');
+            return runOptionUpdate(() => setOption('popupScale', '1'));
         });
     }
 
@@ -174,52 +208,68 @@ window.addEventListener('load', () => {
         openai: { storage: 'openaiApiKey', placeholder: 'sk-...' }
     };
 
-    function loadProviderUI(provider) {
+    async function loadProviderUI(provider, showSavedStatus) {
         let info = providerKeyMap[provider] || providerKeyMap.gemini;
         document.getElementById('apiKey').placeholder = info.placeholder;
         document.getElementById('apiKey').value = '';
         document.getElementById('apiKeyStatus').textContent = '';
-        chrome.storage.local.get(info.storage, function (result) {
-            if (result[info.storage]) {
-                document.getElementById('apiKey').value = result[info.storage];
+        let result = await zhongwenStorage.getRaw(info.storage);
+        if (result[info.storage]) {
+            document.getElementById('apiKey').value = result[info.storage];
+            if (showSavedStatus !== false) {
                 document.getElementById('apiKeyStatus').textContent = 'Key saved.';
             }
-        });
+        }
     }
 
-    chrome.storage.local.get('aiProvider', function (result) {
+    async function loadProviderSelection() {
+        let result = await zhongwenStorage.getRaw('aiProvider');
         let provider = result.aiProvider || 'gemini';
-        let el = document.querySelector('input[name="aiProvider"][value="' + provider + '"]');
-        if (el) el.checked = true;
-        loadProviderUI(provider);
-    });
+        document.querySelectorAll('input[name="aiProvider"]').forEach(input => {
+            input.checked = input.value === provider;
+        });
+        await loadProviderUI(provider);
+    }
+
+    loadProviderSelection().catch(error => showOptionsError(error));
 
     document.querySelectorAll('input[name="aiProvider"]').forEach(function (input) {
         input.addEventListener('change', function () {
             let provider = input.value;
-            chrome.storage.local.set({ aiProvider: provider });
-            loadProviderUI(provider);
+            return runOptionUpdate(async () => {
+                await zhongwenStorage.setRaw({ aiProvider: provider });
+                await loadProviderUI(provider);
+            }, loadProviderSelection);
         });
     });
 
-    document.getElementById('saveApiKey').addEventListener('click', function () {
+    document.getElementById('saveApiKey').addEventListener('click', async function () {
         let provider = document.querySelector('input[name="aiProvider"]:checked');
         if (!provider) return;
         let info = providerKeyMap[provider.value];
         let key = document.getElementById('apiKey').value.trim();
-        if (key) {
-            let obj = {};
-            obj[info.storage] = key;
-            chrome.storage.local.set(obj, function () {
+        let status = document.getElementById('apiKeyStatus');
+        status.textContent = '';
+        try {
+            if (key) {
+                let obj = {};
+                obj[info.storage] = key;
+                await zhongwenStorage.setRaw(obj);
                 document.getElementById('apiKeyStatus').textContent = 'Key saved.';
-            });
-        } else {
-            chrome.storage.local.remove(info.storage, function () {
+            } else {
+                await zhongwenStorage.removeRaw(info.storage);
                 document.getElementById('apiKeyStatus').textContent = 'Key removed.';
-            });
+            }
+        } catch (error) {
+            try {
+                await loadProviderUI(provider.value, false);
+            } catch (restoreError) {
+                console.error('Could not reload persisted API key:', restoreError);
+            }
+            status.textContent = 'Could not save key: ' + errorMessage(error);
         }
     });
 
 });
 
-loadVals();
+loadVals().catch(error => showOptionsError(error));
