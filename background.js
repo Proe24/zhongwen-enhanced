@@ -74,6 +74,18 @@ let dict;
 let dictLoading;
 let thesaurus;        // word -> [synonyms], lazily loaded from data/thesaurus.json
 let thesaurusLoading; // in-flight load promise, so concurrent lookups share one fetch
+const STORAGE_LOCK_NAME = 'zhongwen-storage';
+let fallbackStorageLock = Promise.resolve();
+
+function withStorageLock(task) {
+    if (typeof navigator !== 'undefined' && navigator.locks &&
+        typeof navigator.locks.request === 'function') {
+        return navigator.locks.request(STORAGE_LOCK_NAME, task);
+    }
+    let run = fallbackStorageLock.then(task);
+    fallbackStorageLock = run.catch(() => { /* keep later storage work running */ });
+    return run;
+}
 
 function getStorage(keys) {
     return new Promise((resolve, reject) => {
@@ -110,7 +122,7 @@ async function activateExtension(tabId, showHelp) {
     let generation = ++activationGeneration;
     isActivated = true;
     try {
-        await setStorage({ enabled: '1' });
+        await withStorageLock(() => setStorage({ enabled: '1' }));
     } catch (error) {
         if (generation === activationGeneration) isActivated = false;
         throw error;
@@ -242,7 +254,7 @@ async function deactivateExtension() {
     let generation = ++activationGeneration;
     isActivated = false;
     try {
-        await setStorage({ enabled: '0' });
+        await withStorageLock(() => setStorage({ enabled: '0' }));
     } catch (error) {
         if (generation === activationGeneration) isActivated = true;
         throw error;
@@ -522,19 +534,7 @@ function createEntryId() {
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 }
 
-function createLegacyEntryId(entry, occurrence) {
-    // Use fields that word-list mutations do not edit so a best-effort ID stays
-    // stable even when the migration cannot be persisted and the worker wakes
-    // again later. The occurrence suffix distinguishes otherwise identical
-    // legacy records.
-    let identity = {};
-    [
-        'timestamp', 'simplified', 'traditional', 'pinyin', 'definition',
-        'isSentence', 'breakdown'
-    ].forEach(key => {
-        if (Object.prototype.hasOwnProperty.call(entry, key)) identity[key] = entry[key];
-    });
-    let value = JSON.stringify(identity);
+function hashLegacyValue(value) {
     let first = 2166136261;
     let second = 5381;
     for (let i = 0; i < value.length; i++) {
@@ -542,12 +542,28 @@ function createLegacyEntryId(entry, occurrence) {
         first = Math.imul(first ^ code, 16777619);
         second = ((second << 5) + second) ^ code;
     }
-    return 'legacy-' + (first >>> 0).toString(36) + '-' +
-        (second >>> 0).toString(36) + '-' + occurrence.toString(36);
+    return value.length.toString(36) + '-' + (first >>> 0).toString(36) + '-' +
+        (second >>> 0).toString(36);
+}
+
+function createLegacyEntryId(entry, occurrence, generation) {
+    // Use fields that word-list mutations do not edit so a best-effort ID stays
+    // stable even when the migration cannot be persisted and the worker wakes
+    // again later. The whole-list generation prevents an occurrence ID from
+    // being reassigned to a different record after a fallback mutation.
+    let identity = {};
+    [
+        'timestamp', 'simplified', 'traditional', 'pinyin', 'definition',
+        'isSentence', 'breakdown'
+    ].forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(entry, key)) identity[key] = entry[key];
+    });
+    return 'legacy-' + generation + '-' + hashLegacyValue(JSON.stringify(identity)) +
+        '-' + occurrence.toString(36);
 }
 
 function enqueueWordlistTask(task) {
-    let run = wordlistQueue.then(task);
+    let run = wordlistQueue.then(() => withStorageLock(task));
     wordlistQueue = run.catch(() => { /* keep later mutations running */ });
     return run;
 }
@@ -564,6 +580,7 @@ async function readWordlist() {
 
     let generatedIds = new Set();
     let occurrences = new Map();
+    let generation = hashLegacyValue(json || '[]');
     entries.forEach(entry => {
         if (!entry.id) {
             let fingerprint = JSON.stringify([
@@ -572,7 +589,7 @@ async function readWordlist() {
             ]);
             let occurrence = occurrences.get(fingerprint) || 0;
             occurrences.set(fingerprint, occurrence + 1);
-            entry.id = createLegacyEntryId(entry, occurrence);
+            entry.id = createLegacyEntryId(entry, occurrence, generation);
             generatedIds.add(entry.id);
         }
     });

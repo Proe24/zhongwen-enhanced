@@ -284,10 +284,10 @@ test('legacy word lists remain stable and deletable when ID migration exceeds qu
     const afterDelete = await send({ type: 'wordlist-get' });
     assert.equal(afterDelete.error, undefined);
     assert.equal(afterDelete.entries.length, 1);
-    assert.equal(afterDelete.entries[0].id, firstRead.entries[1].id);
+    assert.notEqual(afterDelete.entries[0].id, firstRead.entries[1].id);
 });
 
-test('duplicate transient legacy IDs reject stale delete and update mutations', async function () {
+test('two duplicate transient legacy entries invalidate every stale ID after mutation', async function () {
     const duplicate = {
         timestamp: 1,
         simplified: '同',
@@ -323,11 +323,11 @@ test('duplicate transient legacy IDs reject stale delete and update mutations', 
     assert.equal(firstDelete.error, undefined);
     assert.equal(JSON.parse(loaded.storage.wordlist).length, 1);
 
-    const staleUpdate = await send({
-        type: 'wordlist-mutate', operation: 'update', id: staleRemainingId,
+    const reusedIdUpdate = await send({
+        type: 'wordlist-mutate', operation: 'update', id: firstId,
         patch: { notes: 'must not be reported as saved' }
     });
-    assert.match(staleUpdate.error, /word list changed/i);
+    assert.match(reusedIdUpdate.error, /word list changed/i);
     assert.equal(JSON.parse(loaded.storage.wordlist)[0].notes, undefined);
 
     const staleDelete = await send({
@@ -337,12 +337,139 @@ test('duplicate transient legacy IDs reject stale delete and update mutations', 
     assert.equal(JSON.parse(loaded.storage.wordlist).length, 1);
 
     const refreshed = await send({ type: 'wordlist-get' });
+    assert.notEqual(refreshed.entries[0].id, firstId);
     assert.notEqual(refreshed.entries[0].id, staleRemainingId);
     const finalDelete = await send({
         type: 'wordlist-mutate', operation: 'delete', ids: [refreshed.entries[0].id]
     });
     assert.equal(finalDelete.error, undefined);
     assert.deepEqual(JSON.parse(loaded.storage.wordlist), []);
+});
+
+test('three duplicate transient legacy entries cannot retarget stale IDs after mutation', async function () {
+    const duplicate = {
+        timestamp: 1,
+        simplified: '同',
+        traditional: '同',
+        pinyin: 'tóng',
+        definition: 'same'
+    };
+    const loaded = loadBackground({
+        wordlist: JSON.stringify([
+            duplicate, Object.assign({}, duplicate), Object.assign({}, duplicate)
+        ])
+    });
+    await Promise.resolve();
+    loaded.setStorageFailure(function (values) {
+        if (!values.wordlist) return null;
+        const stored = JSON.parse(values.wordlist);
+        return stored.some(entry => entry.id && entry.id.startsWith('legacy-'))
+            ? 'quota exceeded'
+            : null;
+    });
+
+    async function send(message) {
+        return new Promise(resolve => loaded.listeners.runtimeMessage(message, {}, resolve));
+    }
+
+    const firstRead = await send({ type: 'wordlist-get' });
+    const staleIds = firstRead.entries.map(entry => entry.id);
+    assert.equal(new Set(staleIds).size, 3);
+
+    const firstDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [staleIds[1]]
+    });
+    assert.equal(firstDelete.error, undefined);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 2);
+
+    for (const staleId of staleIds) {
+        const staleUpdate = await send({
+            type: 'wordlist-mutate', operation: 'update', id: staleId,
+            patch: { notes: 'must not be retargeted' }
+        });
+        assert.match(staleUpdate.error, /word list changed/i);
+    }
+    const staleDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [staleIds[0]]
+    });
+    assert.match(staleDelete.error, /word list changed/i);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 2);
+    assert.ok(JSON.parse(loaded.storage.wordlist).every(entry => entry.notes === undefined));
+
+    const refreshed = await send({ type: 'wordlist-get' });
+    assert.equal(refreshed.entries.length, 2);
+    assert.ok(refreshed.entries.every(entry => !staleIds.includes(entry.id)));
+    const finalDelete = await send({
+        type: 'wordlist-mutate', operation: 'delete', ids: [refreshed.entries[0].id]
+    });
+    assert.equal(finalDelete.error, undefined);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 1);
+});
+
+test('word-list tasks and enabled writes share the zhongwen storage Web Lock', async function () {
+    const loaded = loadBackground({ wordlist: '[]' });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const lockNames = [];
+    let lockTail = Promise.resolve();
+    let activeLocks = 0;
+    let maxActiveLocks = 0;
+    loaded.sandbox.navigator = {
+        locks: {
+            request: function (name, task) {
+                lockNames.push(name);
+                const run = lockTail.then(async function () {
+                    activeLocks++;
+                    maxActiveLocks = Math.max(maxActiveLocks, activeLocks);
+                    try {
+                        return await task();
+                    } finally {
+                        activeLocks--;
+                    }
+                });
+                lockTail = run.catch(() => {});
+                return run;
+            }
+        }
+    };
+
+    const originalGet = loaded.sandbox.chrome.storage.local.get;
+    const originalSet = loaded.sandbox.chrome.storage.local.set;
+    loaded.sandbox.chrome.storage.local.get = function (keys, callback) {
+        if (keys === 'wordlist' || keys === 'saveToWordList') {
+            assert.equal(activeLocks, 1);
+        }
+        originalGet(keys, callback);
+    };
+    loaded.sandbox.chrome.storage.local.set = function (values, callback) {
+        if (Object.prototype.hasOwnProperty.call(values, 'wordlist') ||
+            Object.prototype.hasOwnProperty.call(values, 'enabled')) {
+            assert.equal(activeLocks, 1);
+        }
+        originalSet(values, callback);
+    };
+
+    loaded.sandbox.first = { entries: [{ simplified: '一' }] };
+    loaded.sandbox.second = { entries: [{ simplified: '二' }] };
+    loaded.run([
+        'ensureDictionary = function () { return Promise.resolve({}); };',
+        'getOptions = function () { return Promise.resolve({}); };',
+        'updateIcon = function () { return Promise.resolve(); };'
+    ].join('\n'));
+    await Promise.all([
+        loaded.run('handleAdd(first)'),
+        loaded.run('handleAdd(second)'),
+        loaded.run('activateExtension(1, false)')
+    ]);
+    await loaded.run('deactivateExtension()');
+
+    assert.deepEqual(lockNames, [
+        'zhongwen-storage', 'zhongwen-storage',
+        'zhongwen-storage', 'zhongwen-storage'
+    ]);
+    assert.equal(maxActiveLocks, 1);
+    assert.equal(JSON.parse(loaded.storage.wordlist).length, 2);
+    assert.equal(loaded.storage.enabled, '0');
 });
 
 test('a search waits for a cold dictionary load before responding', async function () {

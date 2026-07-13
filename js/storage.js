@@ -76,9 +76,18 @@
         return JSON.stringify(legacyEntries.concat(currentEntries));
     }
 
+    function withStorageLock(task) {
+        let locks = globalThis.navigator && globalThis.navigator.locks;
+        if (!locks || typeof locks.request !== 'function') {
+            return Promise.resolve().then(task);
+        }
+        return locks.request('zhongwen-storage', task);
+    }
+
     function migrate() {
         if (migrationPromise) return migrationPromise;
-        migrationPromise = getLocal(['mv3Migrated'].concat(MIGRATABLE_KEYS)).then(result => {
+        migrationPromise = withStorageLock(async function () {
+            let result = await getLocal(['mv3Migrated'].concat(MIGRATABLE_KEYS));
             if (result.mv3Migrated) return;
             let toWrite = { mv3Migrated: true };
             let migratedKeys = [];
@@ -101,9 +110,8 @@
                 }
                 migratedKeys.push(k);
             });
-            return setLocal(toWrite).then(() => {
-                try { migratedKeys.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
-            });
+            await setLocal(toWrite);
+            try { migratedKeys.forEach(k => delete localStorage[k]); } catch (e) { /* localStorage unavailable */ }
         }).catch(error => {
             // A transient failure must not poison every later storage request
             // for the lifetime of the extension page.

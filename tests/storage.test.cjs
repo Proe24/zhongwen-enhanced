@@ -8,6 +8,24 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+function createFakeLockManager() {
+    const tails = new Map();
+    const requests = [];
+    return {
+        requests: requests,
+        request: function (name, callback) {
+            requests.push(name);
+            const previous = tails.get(name) || Promise.resolve();
+            const run = previous.catch(() => {}).then(() => callback({ name: name }));
+            const tail = run.catch(() => {});
+            tails.set(name, tail);
+            return run.finally(() => {
+                if (tails.get(name) === tail) tails.delete(name);
+            });
+        }
+    };
+}
+
 test('extension-page storage writes reject chrome.runtime.lastError', async function () {
     const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'storage.js'), 'utf8');
     const sandbox = {
@@ -181,10 +199,126 @@ test('migration preserves background saves, identical multiplicity, and existing
     assert.equal(Object.keys(legacyStorage).length, 0);
 
     const afterFirstMigration = values.wordlist;
-    vm.runInContext('migrationPromise = null', sandbox);
+    // A newly opened extension page executes a fresh IIFE with its own
+    // migrationPromise. The persisted marker must make that context a no-op.
+    vm.runInContext(source, sandbox, { filename: 'storage.js' });
     await sandbox.zhongwenStorage.migrate();
     assert.equal(values.wordlist, afterFirstMigration);
     assert.equal(setCalls, 1);
+});
+
+test('migration lock prevents a concurrent background word save from being overwritten', async function () {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'storage.js'), 'utf8');
+    const legacyEntry = { simplified: '旧' };
+    const currentEntry = { id: 'current', simplified: '先' };
+    const concurrentEntry = { id: 'concurrent', simplified: '新' };
+    const values = { wordlist: JSON.stringify([currentEntry]) };
+    const legacyStorage = { wordlist: JSON.stringify([legacyEntry]) };
+    const locks = createFakeLockManager();
+    const order = [];
+    let backgroundSave;
+
+    function runBackgroundSave() {
+        return locks.request('zhongwen-storage', async function () {
+            order.push('background-read');
+            const wordlist = JSON.parse(values.wordlist || '[]');
+            wordlist.push(concurrentEntry);
+            values.wordlist = JSON.stringify(wordlist);
+            order.push('background-write');
+        });
+    }
+
+    const sandbox = {
+        Error: Error,
+        Promise: Promise,
+        Object: Object,
+        JSON: JSON,
+        localStorage: legacyStorage,
+        navigator: { locks: locks },
+        chrome: {
+            runtime: { lastError: null },
+            storage: {
+                local: {
+                    get: function (keys, callback) {
+                        const result = {};
+                        keys.forEach(key => {
+                            if (Object.prototype.hasOwnProperty.call(values, key)) {
+                                result[key] = values[key];
+                            }
+                        });
+                        // Queue a background mutation after migration has read
+                        // its snapshot but before that read promise continues.
+                        if (!backgroundSave) backgroundSave = runBackgroundSave();
+                        callback(result);
+                    },
+                    set: function (update, callback) {
+                        order.push('migration-write');
+                        Object.assign(values, update);
+                        callback();
+                    },
+                    remove: function (keys, callback) { callback(); }
+                }
+            }
+        }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox, { filename: 'storage.js' });
+
+    await sandbox.zhongwenStorage.migrate();
+    await backgroundSave;
+
+    assert.deepEqual(locks.requests, ['zhongwen-storage', 'zhongwen-storage']);
+    assert.deepEqual(order, ['migration-write', 'background-read', 'background-write']);
+    const saved = JSON.parse(values.wordlist);
+    assert.deepEqual(
+        saved.map(entry => entry.id || entry.simplified),
+        [legacyEntry.simplified, currentEntry.id, concurrentEntry.id]
+    );
+});
+
+test('word-list first load finishes migration before requesting background entries', async function () {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'wordlist.js'), 'utf8');
+    const events = [];
+    let resolveConfig;
+    const configReady = new Promise(resolve => { resolveConfig = resolve; });
+    const sandbox = {
+        Error: Error,
+        Promise: Promise,
+        Set: Set,
+        Map: Map,
+        console: console,
+        document: { addEventListener: function () {} },
+        zhongwenStorage: {
+            get: function (key) {
+                events.push('storage-get:' + key);
+                return configReady;
+            }
+        },
+        chrome: {
+            runtime: {
+                lastError: null,
+                sendMessage: function (message, callback) {
+                    events.push('runtime-message:' + message.type);
+                    callback({ entries: [] });
+                }
+            }
+        }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox, { filename: 'wordlist.js' });
+
+    const loading = vm.runInContext('loadEntries()', sandbox);
+    await Promise.resolve();
+    assert.deepEqual(events, ['storage-get:simpTrad']);
+
+    resolveConfig({ simpTrad: 'classic' });
+    await loading;
+    assert.deepEqual(events, [
+        'storage-get:simpTrad',
+        'runtime-message:wordlist-get'
+    ]);
 });
 
 test('malformed overlapping wordlists remain unmarked and retryable', async function () {

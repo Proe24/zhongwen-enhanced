@@ -44,10 +44,11 @@ function mutateWordlist(operation) {
 }
 
 async function loadEntries() {
-    let [s, response] = await Promise.all([
-        zhongwenStorage.get('simpTrad'),
-        sendRuntimeMessage({ type: 'wordlist-get' })
-    ]);
+    // Finish any MV2 migration before the background reads the word list. Both
+    // sides share the same Web Lock, so a first-page migration cannot race a
+    // service-worker mutation.
+    let s = await zhongwenStorage.get('simpTrad');
+    let response = await sendRuntimeMessage({ type: 'wordlist-get' });
     showTradPref = s.simpTrad === 'classic';
     entries = response.entries;
     if (entries.length) {
