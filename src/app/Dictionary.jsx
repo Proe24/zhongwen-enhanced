@@ -41,7 +41,7 @@ export function Dictionary({ st, route }) {
           ) : <div class="empty">Type to search. Words you hover on pages show up here as recent lookups.</div>}
         </div>
         <div class="dict-card">
-          {shown && <WordCard match={shown} settings={s} charInfo={charInfoFromMatch(shown)} onToggleSave={() => toggleSaved(shown)} onSpeak={() => speak(shown.entry.simp, { rate: s.ttsRate })} onDrill={(c) => api.entry(c).then((r) => r.match && setOpen(r.match))} onCopy={() => navigator.clipboard.writeText(`${shown.entry.simp}\t${shown.entry.readings[0].py}\t${shown.entry.readings[0].defs.join('; ')}`).then(() => toast('Copied'))} />}
+          {shown && <WordCard match={shown} settings={s} charInfo={charInfoFromMatch(shown)} onToggleSave={() => toggleSaved(shown)} onSpeak={() => speak(shown.entry.simp, { rate: s.ttsRate })} onDrill={(c) => api.entry(c).then((r) => r.match && setOpen(r.match)).catch(() => {})} onCopy={() => navigator.clipboard.writeText(`${shown.entry.simp}\t${shown.entry.readings[0].py}\t${shown.entry.readings[0].defs.join('; ')}`).then(() => toast('Copied'))} />}
         </div>
       </div>
       {toastEl}

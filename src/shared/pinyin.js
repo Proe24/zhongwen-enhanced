@@ -91,6 +91,25 @@ export function toZhuyin(base, tone = 0) {
   return body + TONE_MARKS[tone];
 }
 
+// Tone-marked pinyin → numbered: "chuán tǒng" → "chuan2 tong3", "nǚ" → "nv3".
+// Untouched when the input is already numbered or has no marks.
+const MARK_TONE = { '\u0304': 1, '\u0301': 2, '\u030c': 3, '\u0300': 4 };
+export function marksToNumbers(py) {
+  const s = String(py || '');
+  if (!/[\u0300-\u036f]/.test(s.normalize('NFD'))) return s;
+  return s.split(/\s+/).filter(Boolean).map((syll) => {
+    if (/[1-5]$/.test(syll)) return syll;
+    let tone = 0;
+    let out = '';
+    for (const ch of syll.normalize('NFD')) {
+      if (MARK_TONE[ch]) { tone = MARK_TONE[ch]; continue; }
+      out += ch;
+    }
+    out = out.normalize('NFC').replace(/ü/g, 'v').replace(/Ü/g, 'V');
+    return out + (tone || 5);
+  }).join(' ');
+}
+
 // Strip diacritics and tone digits for search: "nǐ hǎo" / "ni3hao3" → "nihao".
 export function plainPinyin(s) {
   return String(s || '')

@@ -12,9 +12,11 @@ export function useAppState() {
   const refresh = useCallback(() => api.state().then(setSt, (e) => setError(e.message)), []);
   useEffect(() => {
     refresh();
-    const h = (changes, area) => { if (area === 'local') refresh(); };
+    // storage changes arrive per hover (recent lookups, counters): coalesce them
+    let t = null;
+    const h = (changes, area) => { if (area !== 'local') return; clearTimeout(t); t = setTimeout(refresh, 250); };
     chrome.storage.onChanged.addListener(h);
-    return () => chrome.storage.onChanged.removeListener(h);
+    return () => { clearTimeout(t); chrome.storage.onChanged.removeListener(h); };
   }, [refresh]);
   // theme: apply the tokens to <html> so every page shares the palette
   useEffect(() => {

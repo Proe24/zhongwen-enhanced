@@ -208,7 +208,17 @@ marked **(changed)**.
   grading, dictionary search, settings reaching the page, exports as real
   downloads), and the toolbar popup. CI runs all of it on every push.
 - A separate unanchored code review of the worker, engine and text stream was
-  run before release; its findings and fixes are in the changelog.
+  run before release. It found 18 real issues (a dropped message argument that
+  left "recent lookups" empty forever, clicks and keys stolen from editors,
+  CSP-blocked styles, a closed popup resurrected by an in-flight lookup, the
+  1.x import losing sentence translations, formula injection in exports,
+  unvalidated restores, a wedged Review on a vanished word, surrogate-pair
+  caret probing…). All were fixed; the fixes are listed in the changelog.
+- *Keys act on a hover-only popup — doesn't that swallow site shortcuts?*
+  Only single unmodified letters, only while a card is on screen, never in an
+  editor; that is the classic Zhongwen contract and the reason the hint strip
+  exists. Users who read on shortcut-heavy sites can switch to a hold-a-key
+  trigger, where no popup exists until they ask for one.
 
 ## Known limits
 

@@ -12,7 +12,8 @@ import { speak } from '../shared/tts.js';
 import { MAX_WORD } from '../shared/dict.js';
 import { renderPinyin } from '../shared/pinyin.js';
 import * as T from './textStream.js';
-import { setHighlight, clearHighlight, ensureHighlightStyle } from './highlight.js';
+import { setHighlight, clearHighlight, ensureHighlightStyle, removeHighlightStyle } from './highlight.js';
+import { copyText } from '../shared/clipboard.js';
 import { renderInto, unmountAll, isInsideHost, q } from './host.jsx';
 import { Popup } from './Popup.jsx';
 import { leadForms } from '../components/WordCard.jsx';
@@ -36,9 +37,9 @@ const active = () => cfg.enabled && cfg.settings && !cfg.siteOff;
 export function configure(patch) {
   Object.assign(cfg, patch);
   if (cfg.settings) vars = cssVars(tokensFor(cfg.settings, cfg.scheme), cfg.settings.popupScale);
-  ensureHighlightStyle(document, cfg.scheme);
   if (active() && !attached) attach();
   if (!active() && attached) detach();
+  if (attached) ensureHighlightStyle(document, cfg.scheme); // only touch the page while lookups are on
   if (cur) { cur.compact = cur.userCompact != null ? cur.userCompact : cfg.settings.compact; rerender(); }
   if (cfg.settings) updateSentencePanel({ vars, settings: cfg.settings });
 }
@@ -53,6 +54,7 @@ export function openSentence(text) {
 
 function attach() {
   attached = true;
+  ensureHighlightStyle(document, cfg.scheme);
   document.addEventListener('mousemove', onMove, { passive: true });
   document.addEventListener('mousedown', onDown, true);
   document.addEventListener('keydown', onKey, true);
@@ -71,7 +73,11 @@ function detach() {
   window.removeEventListener('resize', onScroll);
   window.removeEventListener('blur', onBlur);
   hide();
+  removeHighlightStyle(document);
 }
+
+// an extension reload/update leaves this script orphaned: its chrome.runtime is gone
+const orphaned = () => { try { return !chrome.runtime || !chrome.runtime.id; } catch { return true; } };
 
 // ── pointer ──────────────────────────────────────────────────────────────────
 function triggerHeld(e) {
@@ -82,6 +88,7 @@ function triggerHeld(e) {
 function onMove(e) {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
+  if (orphaned()) { detach(); return; }
   if (isInsideHost(e.target)) { clearTimeout(hoverTimer); clearTimeout(hideTimer); return; }
   if (cur && cur.pinned) return;
   if (sentencePanelOpen()) return;
@@ -202,6 +209,7 @@ function showMessage(text) {
 }
 
 export function hide() {
+  lookupSeq++; // a lookup still in flight must not bring the popup back
   clearTimeout(hoverTimer);
   clearTimeout(hideTimer);
   clearTimeout(countTimer);
@@ -240,6 +248,7 @@ function pointInWord(x, y) {
 function onDown(e) {
   if (isInsideHost(e.target)) return;
   if (!cur) return;
+  if (editable(deepTarget(e))) return; // never steal clicks from an editor
   if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && pointInWord(e.clientX, e.clientY)) {
     cur.pinned = !cur.pinned;
     rerender();
@@ -251,12 +260,20 @@ function onDown(e) {
 
 // ── keyboard ─────────────────────────────────────────────────────────────────
 const editable = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+// the real target, inside any open shadow root (a web component's search box)
+const deepTarget = (e) => { try { const p = e.composedPath && e.composedPath(); return (p && p[0] && p[0].nodeType === 1 ? p[0] : e.target); } catch { return e.target; } };
+const typing = (e) => {
+  if (editable(deepTarget(e))) return true;
+  let el = document.activeElement;
+  while (el) { if (editable(el)) return true; el = el.shadowRoot ? el.shadowRoot.activeElement : null; }
+  return false;
+};
 const MOD_KEYS = { alt: 'Alt', ctrl: 'Control', shift: 'Shift' };
 
 function onKey(e) {
   const trig = cfg.settings.trigger;
   if (trig !== 'hover' && e.key === MOD_KEYS[trig] && !cur && mouse.x >= 0) { lookupAt(mouse.x, mouse.y); return; }
-  if (editable(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (typing(e) || e.altKey || e.ctrlKey || e.metaKey) return;
   if (!cur) {
     // `t` with text selected on the page and no popup: break the selection down
     if (e.key.toLowerCase() === 't' && !sentencePanelOpen()) {
@@ -265,6 +282,7 @@ function onKey(e) {
     }
     return;
   }
+  if (e.shiftKey && e.key !== '?') return; // Shift+N, Shift+Space… belong to the page
   const k = e.key === ' ' ? 'space' : e.key.toLowerCase();
   const fn = KEYS[k];
   if (!fn) return;
@@ -356,20 +374,7 @@ export const actions = {
     const m = shownMatch();
     const r = m.entry.readings[0];
     const text = `${leadForms(m.entry, m.word, cfg.settings.script).lead}\t${renderPinyin(r.py, 'marks').join(' ')}\t${r.defs.join('; ')}`;
-    const fallback = () => {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.cssText = 'position:fixed;opacity:0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        showToast('Copied');
-      } catch { showToast('Could not copy'); }
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast('Copied'), fallback);
-    else fallback();
+    copyText(text).then(() => showToast('Copied'), () => showToast('Could not copy'));
   },
   sentence() {
     if (!cur) return;

@@ -8,6 +8,9 @@ import { speak } from '../shared/tts.js';
 import { Hanzi, Pinyin } from '../components/Hanzi.jsx';
 import { WordCard, charInfoFromMatch } from '../components/WordCard.jsx';
 import { ensureHost, isInsideHost, mountFor } from './host.jsx';
+import { copyText } from '../shared/clipboard.js';
+
+const MAX_CHARS = 1000; // a whole-page selection would stall the page and the worker
 
 let st = null; // { text, tokens, sel, match, saved, toast, vars, settings }
 let toastTimer = null;
@@ -15,13 +18,15 @@ let toastTimer = null;
 export const sentencePanelOpen = () => !!st;
 
 export function openSentencePanel(text, { vars = '', settings }) {
-  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  let t = String(text || '').replace(/\s+/g, ' ').trim();
   if (!t || !/\p{Script=Han}/u.test(t)) return false;
+  const truncated = t.length > MAX_CHARS;
+  if (truncated) t = t.slice(0, MAX_CHARS);
   if (!st) {
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onDown, true);
   }
-  st = { text: t, tokens: null, sel: null, match: null, saved: false, toast: null, vars, settings };
+  st = { text: t, tokens: null, sel: null, match: null, saved: false, toast: null, vars, settings, truncated };
   paint();
   api.segment(t).then((r) => { if (st && st.text === t) { st.tokens = r.tokens; paint(); } }).catch(() => { if (st && st.text === t) { st.tokens = []; paint(); } });
   return true;
@@ -78,7 +83,7 @@ function saveSentence() {
 
 function copyAll() {
   const lines = [st.text, (st.tokens || []).filter((t) => t.w).map((t) => `${t.w}\t${t.py || ''}\t${t.gloss || ''}`).join('\n')].join('\n');
-  navigator.clipboard.writeText(lines).then(() => toast('Copied'), () => toast('Could not copy'));
+  copyText(lines).then(() => toast('Copied'), () => toast('Could not copy'));
 }
 
 function Panel() {
@@ -87,7 +92,7 @@ function Panel() {
   return (
     <div class="zw-panel" style={st.vars} role="dialog" aria-label="Sentence">
       <div class="zw-panel-head">
-        <span class="zw-label">Sentence · {st.tokens ? `${st.tokens.filter((t) => t.w).length} words` : 'breaking down…'}</span>
+        <span class="zw-label">Sentence · {st.tokens ? `${st.tokens.filter((t) => t.w).length} words` : 'breaking down…'}{st.truncated ? ` · first ${MAX_CHARS} characters` : ''}</span>
         <button class="zw-x" onClick={closeSentencePanel} title="Close (Esc)">×</button>
       </div>
       <div class="zw-panel-body">
@@ -104,7 +109,7 @@ function Panel() {
         ) : <div class="zw-faint-text" style="padding:10px 0">{st.text}</div>}
         {st.sel != null && (
           <div class="zw-panel-word">
-            {st.match ? <WordCard match={st.match} settings={s} charInfo={charInfoFromMatch(st.match)} onDrill={(c) => api.entry(c).then((r) => { if (st && r.match) { st.match = r.match; paint(); } })} onToggleSave={toggleWord} onSpeak={() => speak(st.match.entry.simp, { rate: s.ttsRate })} /> : <div class="zw-faint-text" style="padding:10px 0">Looking up…</div>}
+            {st.match ? <WordCard match={st.match} settings={s} charInfo={charInfoFromMatch(st.match)} onDrill={(c) => api.entry(c).then((r) => { if (st && r.match) { st.match = r.match; paint(); } }).catch(() => {})} onToggleSave={toggleWord} onSpeak={() => speak(st.match.entry.simp, { rate: s.ttsRate })} /> : <div class="zw-faint-text" style="padding:10px 0">Looking up…</div>}
           </div>
         )}
       </div>

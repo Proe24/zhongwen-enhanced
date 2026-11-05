@@ -31,6 +31,19 @@ automatically.
 - The 48 MB offline stroke-order/etymology data and the thesaurus.
 - jQuery, Bootstrap and the bundled web fonts.
 
+### Hardening (from the pre-release review)
+- Mouse and keyboard handling stay out of editors, including inputs inside
+  shadow roots; Shift combinations are left to the page.
+- Popup and highlight styles are adopted stylesheets, so strict-CSP pages
+  can't strip them; nothing is injected while lookups are off.
+- A lookup still in flight can no longer bring back a popup you just closed.
+- CSV/Anki cells that would read as spreadsheet formulas are neutralized;
+  restored backups are validated entry by entry and only http(s) links kept.
+- The 1.x import keeps each sentence's translation as its note and converts
+  tone-marked pinyin to numbers, and runs inside the single write chain.
+- Sentence breakdowns are capped at 1000 characters; the Review screen skips
+  a card whose word was removed elsewhere instead of sticking.
+
 ### Under the hood
 - Manifest V3, Vite + Preact, a single-writer service worker, unit tests under
   vitest, an end-to-end run that loads the built extension into headless

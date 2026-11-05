@@ -45,7 +45,11 @@ function Popup() {
   const days = streak(st.stats);
   const go = (route) => api.openApp(route).then(() => window.close());
   const toggleSaved = (m) => (m.saved ? api.removeWord(m.entry.simp) : api.saveWord({ w: m.entry.simp, trad: m.entry.trad, py: m.entry.readings[0].py, def: m.entry.readings[0].defs.slice(0, 3).join('; '), sent: '', url: '', title: 'Looked up' }))
-    .then(() => setOpen({ ...m, saved: !m.saved, fam: m.saved ? null : 'new' }));
+    .then(() => {
+      const next = { ...m, saved: !m.saved, fam: m.saved ? null : 'new' };
+      setOpen(next);
+      setResults((rs) => rs.map((r) => (r.word === m.word ? next : r)));
+    }).catch(() => {});
 
   return (
     <div class="pop">
@@ -69,7 +73,7 @@ function Popup() {
       {open ? (
         <div class="pop-entry">
           <button class="btn btn-sm btn-quiet" onClick={() => setOpen(null)}>‹ results</button>
-          <WordCard match={open} settings={s} charInfo={charInfoFromMatch(open)} onToggleSave={() => toggleSaved(open)} onSpeak={() => speak(open.word, { rate: s.ttsRate })} onDrill={(c) => api.entry(c).then((r) => r.match && setOpen(r.match))} />
+          <WordCard match={open} settings={s} charInfo={charInfoFromMatch(open)} onToggleSave={() => toggleSaved(open)} onSpeak={() => speak(open.word, { rate: s.ttsRate })} onDrill={(c) => api.entry(c).then((r) => r.match && setOpen(r.match)).catch(() => {})} />
         </div>
       ) : results.length > 0 ? (
         <div class="pop-results">

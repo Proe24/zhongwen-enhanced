@@ -7,16 +7,18 @@ describe('migrateV1', () => {
     const v1 = JSON.stringify([
       { timestamp: 1000, simplified: '传统', traditional: '傳統', pinyin: 'chuan2 tong3', definition: 'tradition', list: 'HSK5', notes: 'hi' },
       { timestamp: 2000, simplified: '你好', traditional: '你好', pinyin: 'ni3 hao3', definition: 'hello' },
-      { timestamp: 3000, simplified: '我爱你。', traditional: '我愛你。', pinyin: '', definition: 'I love you.', isSentence: true },
+      { timestamp: 3000, simplified: '我爱你。', traditional: '我愛你。', pinyin: '', definition: 'I love you.', notes: 'Literal: I love you', isSentence: true },
+      { timestamp: 3500, simplified: '学习', traditional: '學習', pinyin: 'xué xí', definition: 'to study' },
       { timestamp: 4000, simplified: '传统', traditional: '傳統', pinyin: 'chuan2 tong3', definition: 'dup' },
       null, { bogus: true },
     ]);
     const { vocab, sentences } = migrateV1(v1);
-    expect(Object.keys(vocab)).toEqual(['传统', '你好']);
+    expect(Object.keys(vocab)).toEqual(['传统', '你好', '学习']);
+    expect(vocab['学习'].py).toBe('xue2 xi2'); // 1.x stored tone marks for words added from the sentence panel
     expect(vocab['传统']).toMatchObject({ trad: '傳統', py: 'chuan2 tong3', def: 'tradition', title: 'HSK5', note: 'hi', addedAt: 1000 });
     expect(vocab['你好'].trad).toBe('');
     expect(sentences).toHaveLength(1);
-    expect(sentences[0]).toMatchObject({ text: '我爱你。', addedAt: 3000 });
+    expect(sentences[0]).toMatchObject({ text: '我爱你。', addedAt: 3000, note: 'I love you.\nLiteral: I love you' });
   });
   it('survives garbage', () => {
     expect(migrateV1('not json')).toEqual({ vocab: {}, sentences: [] });

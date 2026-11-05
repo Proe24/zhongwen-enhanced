@@ -144,6 +144,11 @@ try {
   const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
   check(clip === "人民银行\tRén mín Yín háng\tPeople's Bank of China", `clipboard: ${JSON.stringify(clip)}`);
 
+  console.log('6d. a word that stays on screen is recorded as a recent lookup');
+  await page.waitForTimeout(1100);
+  const recent = await sw.evaluate(() => chrome.storage.local.get('recent').then((r) => r.recent || []));
+  check(recent[0] === '人民银行', `recent: ${recent.slice(0, 3).join(' ')}`);
+
   console.log('7. space pins; mousemove elsewhere keeps it; esc closes');
   await page.keyboard.press('Space'); // unpin (drilling pinned it)
   await waitPopup((x) => x && !x.pinned);

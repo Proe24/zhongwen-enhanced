@@ -1,3 +1,5 @@
+import { marksToNumbers } from './pinyin.js';
+
 // schema.js — what lives in chrome.storage.local, and how older data is
 // brought forward. Pure functions; the service worker is the only writer.
 //
@@ -35,7 +37,10 @@ export const sentenceId = (text, url) => {
 // Version 1.x kept one JSON-encoded array under `wordlist`:
 //   { timestamp, simplified, traditional, pinyin, definition, isSentence?, notes?, list?, box? }
 // Words become vocab entries (the list name is kept as the "title" so the
-// Library still groups them); sentences become saved sentences.
+// Library still groups them); sentences become saved sentences, keeping the
+// translation 1.x stored in `definition` (plus any literal gloss in `notes`)
+// as the sentence note. 1.x stored pinyin numbered OR tone-marked depending on
+// where the word was added from; everything is normalized to numbered here.
 export function migrateV1(wordlistJson) {
   const vocab = {};
   const sentences = [];
@@ -47,7 +52,8 @@ export function migrateV1(wordlistJson) {
     const addedAt = Number(e.timestamp) || Date.now();
     if (e.isSentence) {
       const text = String(e.simplified);
-      sentences.push({ id: sentenceId(text, ''), text, url: '', title: e.list ? String(e.list) : 'Imported from version 1', addedAt, ...(e.notes ? { note: String(e.notes) } : {}) });
+      const note = [e.definition, e.notes].map((x) => (x == null ? '' : String(x).trim())).filter(Boolean).join('\n');
+      sentences.push({ id: sentenceId(text, ''), text, url: '', title: e.list ? String(e.list) : 'Imported from version 1', addedAt, ...(note ? { note } : {}) });
       continue;
     }
     const w = String(e.simplified);
@@ -55,7 +61,7 @@ export function migrateV1(wordlistJson) {
     vocab[w] = {
       w,
       trad: e.traditional && e.traditional !== w ? String(e.traditional) : '',
-      py: String(e.pinyin || ''),
+      py: marksToNumbers(String(e.pinyin || '')),
       def: String(e.definition || ''),
       sent: '',
       url: '',

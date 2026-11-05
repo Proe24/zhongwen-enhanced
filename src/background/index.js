@@ -6,9 +6,10 @@ import { searchDict } from '../shared/search.js';
 import { normalizeSettings } from '../shared/settings.js';
 import { KEYS, SCHEMA, emptyState, migrateV1, dayKey, sentenceId, RECENT_MAX } from '../shared/schema.js';
 import { gradeCard, inLearning, familiarity, reviewed } from '../shared/fsrs.js';
-import { exportText, makeBackup, applyBackup } from '../shared/exports.js';
+import { exportText, makeBackup, applyBackup, cleanVocabEntry, cleanSentence } from '../shared/exports.js';
 
 const APP_URL = chrome.runtime.getURL('app/index.html');
+const SEGMENT_MAX = 2000; // characters the sentence panel will break down at once
 
 // ── dictionary ───────────────────────────────────────────────────────────────
 let dictPromise = null;
@@ -41,7 +42,7 @@ function getState() {
       if (!st.stats || typeof st.stats !== 'object') st.stats = {};
       if (!Array.isArray(st.recent)) st.recent = [];
       return st;
-    });
+    }).catch((e) => { statePromise = null; throw e; });
   }
   return statePromise;
 }
@@ -87,18 +88,26 @@ async function setEnabled(enabled) {
 }
 
 // ── lookups ──────────────────────────────────────────────────────────────────
-function charInfos(dict, word) {
-  const chars = Array.from(word);
-  if (chars.length < 2) return [];
-  return chars.map((c) => {
-    const e = decodeEntry(dict, c);
-    return e ? { c, py: e.readings[0].py, gloss: e.readings[0].defs.slice(0, 2).join('; ') } : { c, py: '', gloss: '' };
-  });
+// per-character info for a compound, for every spelling the card may lead
+// with (as on the page, simplified, traditional)
+function charInfos(dict, word, entry) {
+  if (Array.from(word).length < 2) return [];
+  const seen = new Set();
+  const out = [];
+  for (const form of [word, entry.simp, entry.trad]) {
+    for (const c of Array.from(form || '')) {
+      if (seen.has(c)) continue;
+      seen.add(c);
+      const e = decodeEntry(dict, c);
+      out.push(e ? { c, py: e.readings[0].py, gloss: e.readings[0].defs.slice(0, 2).join('; ') } : { c, py: '', gloss: '' });
+    }
+  }
+  return out;
 }
 function decorate(st, m, dict) {
   const v = st.vocab[m.entry.simp];
   const card = st.srs[m.entry.simp];
-  return { ...m, saved: !!v, fam: v ? familiarity(card) : null, note: v && v.note ? v.note : '', chars: dict ? charInfos(dict, m.word) : [] };
+  return { ...m, saved: !!v, fam: v ? familiarity(card) : null, note: v && v.note ? v.note : '', chars: dict ? charInfos(dict, m.word, m.entry) : [] };
 }
 async function lookup(text) {
   const dict = await loadDict();
@@ -138,10 +147,10 @@ function saveWord(e) {
     if (!w) throw new Error('No word');
     if (st.vocab[w]) {
       // already saved: fill in a sentence if we never had one
-      if (!st.vocab[w].sent && e.sent) return { vocab: { ...st.vocab, [w]: { ...st.vocab[w], sent: String(e.sent), url: String(e.url || ''), title: String(e.title || '') } } };
+      if (!st.vocab[w].sent && e.sent) { const c = cleanVocabEntry(w, { ...st.vocab[w], sent: e.sent, url: e.url, title: e.title }); return { vocab: { ...st.vocab, [w]: c } }; }
       return null;
     }
-    const entry = { w, trad: String(e.trad || ''), py: String(e.py || ''), def: String(e.def || ''), sent: String(e.sent || ''), url: String(e.url || ''), title: String(e.title || ''), addedAt: Date.now() };
+    const entry = cleanVocabEntry(w, { ...e, addedAt: Date.now() });
     return { vocab: { ...st.vocab, [w]: entry }, stats: bumpStat(st, 'saved') };
   }).then((st) => ({ saved: true, entry: st.vocab[e.w] }));
 }
@@ -172,7 +181,7 @@ function saveSentence(s) {
     if (!text) throw new Error('Empty sentence');
     const id = sentenceId(text, s.url || '');
     if (st.sentences.some((x) => x.id === id)) return null;
-    const entry = { id, text, url: String(s.url || ''), title: String(s.title || ''), addedAt: Date.now(), ...(s.note ? { note: String(s.note) } : {}) };
+    const entry = cleanSentence({ ...s, id, text, addedAt: Date.now() });
     return { sentences: [entry, ...st.sentences] };
   }).then((st) => ({ ok: true, id: sentenceId(String(s.text || '').trim(), s.url || ''), count: st.sentences.length }));
 }
@@ -207,6 +216,7 @@ async function restore(data, mode) {
 }
 async function clearAll() {
   await mutate(() => ({ vocab: {}, srs: {}, sentences: [], daily: null, stats: {}, recent: [] }));
+  await chrome.storage.local.remove('v1Wordlist').catch(() => {});
   return { ok: true };
 }
 
@@ -232,7 +242,8 @@ const handlers = {
   async segment({ text }) {
     const dict = await loadDict();
     const st = await getState();
-    const tokens = segmentText(dict, String(text || '')).map((t) => (t.entry ? { w: t.w, simp: t.entry.simp, trad: t.entry.trad, py: t.entry.readings[0].py, gloss: shortGloss(t.entry, 2), hsk: t.entry.hsk, saved: !!st.vocab[t.entry.simp] } : t.w ? { w: t.w } : t));
+    const capped = String(text || '').slice(0, SEGMENT_MAX);
+    const tokens = segmentText(dict, capped).map((t) => (t.entry ? { w: t.w, simp: t.entry.simp, trad: t.entry.trad, py: t.entry.readings[0].py, gloss: shortGloss(t.entry, 2), hsk: t.entry.hsk, saved: !!st.vocab[t.entry.simp] } : t.w ? { w: t.w } : t));
     return { tokens };
   },
   async search({ q, limit }) {
@@ -291,8 +302,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
 // ── commands, context menus, install ─────────────────────────────────────────
 chrome.commands.onCommand.addListener((cmd) => {
-  if (cmd === 'toggle') handlers.toggle({});
-  if (cmd === 'open-library') openApp('/vocab');
+  if (cmd === 'toggle') handlers.toggle({}).catch(() => {});
+  if (cmd === 'open-library') openApp('/vocab').catch(() => {});
 });
 
 function buildMenus() {
@@ -311,34 +322,38 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   else if (info.menuItemId === 'zw-help') openApp('/help');
 });
 
-// Bring 1.x data forward: the old word list becomes vocab + sentences.
+// Bring 1.x data forward: the old word list becomes vocab + sentences. Runs
+// inside the write chain so no save that lands meanwhile can overwrite it.
 async function migrate() {
-  const raw = await chrome.storage.local.get(null);
-  if (raw.schema >= SCHEMA) return false;
-  const patch = { schema: SCHEMA };
   let migrated = false;
-  if (typeof raw.wordlist === 'string' && raw.wordlist.length > 2) {
-    const { vocab, sentences } = migrateV1(raw.wordlist);
-    if (Object.keys(vocab).length || sentences.length) {
-      patch.vocab = { ...vocab, ...(raw.vocab || {}) };
-      patch.sentences = [...(Array.isArray(raw.sentences) ? raw.sentences : []), ...sentences];
-      migrated = true;
+  let v1Keys = [];
+  await mutate(async (st) => {
+    const raw = await chrome.storage.local.get(null);
+    if (raw.schema >= SCHEMA) return null;
+    const patch = { schema: SCHEMA };
+    if (typeof raw.wordlist === 'string' && raw.wordlist.length > 2) {
+      const { vocab, sentences } = migrateV1(raw.wordlist);
+      if (Object.keys(vocab).length || sentences.length) {
+        patch.vocab = { ...vocab, ...st.vocab };
+        const seen = new Set(st.sentences.map((x) => x.id));
+        patch.sentences = [...st.sentences, ...sentences.filter((x) => !seen.has(x.id))];
+        migrated = true;
+      }
+      patch.v1Wordlist = raw.wordlist; // kept for safety; cleared with "Clear" in Settings
     }
-    patch.v1Wordlist = raw.wordlist; // kept for safety; the Library's backup tools can drop it
-  }
-  if (raw.enabled === '1') patch.enabled = true;
-  await chrome.storage.local.set(patch);
-  const v1Keys = ['wordlist', 'tonecolors', 'skritterTLD', 'zhuyin', 'grammar', 'vocab_v1', 'simpTrad', 'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'defView', 'popupScale', 'saveToWordList', 'mv3Migrated', 'anthropicKey', 'geminiKey', 'openaiKey', 'aiProvider'].filter((k) => k in raw && k !== 'wordlist');
-  if (v1Keys.length) await chrome.storage.local.remove(v1Keys);
-  statePromise = null;
+    if (raw.enabled === '1') patch.enabled = true;
+    v1Keys = ['wordlist', 'tonecolors', 'skritterTLD', 'zhuyin', 'grammar', 'simpTrad', 'toneColorScheme', 'direction', 'mode', 'density', 'hanziFont', 'defView', 'popupScale', 'saveToWordList', 'mv3Migrated', 'anthropicKey', 'geminiKey', 'openaiKey', 'aiProvider'].filter((k) => k in raw);
+    return patch;
+  });
+  if (v1Keys.length) await chrome.storage.local.remove(v1Keys).catch(() => {});
   return migrated;
 }
 
-chrome.runtime.onInstalled.addListener(async (details) => {
+chrome.runtime.onInstalled.addListener((details) => {
   buildMenus();
-  const migrated = await migrate();
-  await syncBadge();
-  if (details.reason === 'install' || migrated) openApp(migrated ? '/help?from=v1' : '/help');
+  migrate().then(async (migrated) => {
+    await syncBadge();
+    if (details.reason === 'install' || migrated) await openApp(migrated ? '/help?from=v1' : '/help');
+  }).catch(() => {});
 });
 chrome.runtime.onStartup.addListener(() => { buildMenus(); syncBadge(); });
-self.addEventListener?.('activate', () => { flushLookups(); });

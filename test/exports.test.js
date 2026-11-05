@@ -21,9 +21,27 @@ describe('exports', () => {
     expect(csv).toContain('"a\tb\nc"');
     expect(csv.split('\n')[0]).toBe('simplified,traditional,pinyin,pinyin_marks,meaning,sentence,source_title,source_url,note,added');
   });
+  it('neutralizes spreadsheet formulas from page text', () => {
+    const hostile = [{ w: '词', trad: '', py: 'ci2', def: 'word', sent: '=HYPERLINK("http://evil")', url: '', title: '-2+3', addedAt: 0 }];
+    expect(toCsv(hostile)).toContain("\"'=HYPERLINK(\"\"http://evil\"\")\"");
+    expect(toCsv(hostile)).toContain(",'-2+3,");
+    expect(toAnki(hostile).split('\n')[3]).toContain("\t'=HYPERLINK");
+  });
+  it('drops corrupt entries and non-http links on restore', () => {
+    const local = { vocab: {}, srs: {}, sentences: [], settings: {}, stats: {}, daily: null, recent: [] };
+    const file = { app: 'zhongwen-enhanced', data: { vocab: { x: null, y: { w: 'zzz', url: 'javascript:alert(1)', addedAt: 'nope' }, z: 7 }, srs: { y: { reps: 1 }, ghost: { reps: 2 } }, sentences: [{ id: 'a', text: '好', url: 'data:text/html,hi' }, { id: 'b' }, 'junk'] } };
+    const r = applyBackup(local, file, 'replace');
+    expect(Object.keys(r.vocab)).toEqual(['y']);
+    expect(r.vocab.y.w).toBe('y');
+    expect(r.vocab.y.url).toBe('');
+    expect(typeof r.vocab.y.addedAt).toBe('number');
+    expect(Object.keys(r.srs)).toEqual(['y']);
+    expect(r.sentences).toHaveLength(1);
+    expect(r.sentences[0].url).toBe('');
+  });
   it('backup round trip + merge', () => {
-    const local = { vocab: { a: { w: 'a', addedAt: 1 } }, srs: {}, sentences: [{ id: 's1', addedAt: 5 }], settings: { theme: 'dark' }, stats: { '2026-01-01': { saved: 1 } }, daily: null, recent: ['a'] };
-    const b = makeBackup({ ...local, vocab: { b: { w: 'b', addedAt: 2 } }, sentences: [{ id: 's2', addedAt: 9 }, { id: 's1', addedAt: 5 }], stats: { '2026-01-01': { reviewed: 3 }, '2026-01-02': { saved: 2 } } });
+    const local = { vocab: { a: { w: 'a', addedAt: 1 } }, srs: {}, sentences: [{ id: 's1', text: '一', addedAt: 5 }], settings: { theme: 'dark' }, stats: { '2026-01-01': { saved: 1 } }, daily: null, recent: ['a'] };
+    const b = makeBackup({ ...local, vocab: { b: { w: 'b', addedAt: 2 } }, sentences: [{ id: 's2', text: '二', addedAt: 9 }, { id: 's1', text: '一', addedAt: 5 }], stats: { '2026-01-01': { reviewed: 3 }, '2026-01-02': { saved: 2 } } });
     const merged = applyBackup(local, b, 'merge');
     expect(Object.keys(merged.vocab).sort()).toEqual(['a', 'b']);
     expect(merged.sentences.map((s) => s.id)).toEqual(['s2', 's1']);

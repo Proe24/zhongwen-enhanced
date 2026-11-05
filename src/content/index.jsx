@@ -11,7 +11,14 @@ import { resolveScheme } from '../shared/theme.js';
   let enabled = false;
   let settings = normalizeSettings(null);
 
-  const apply = () => configure({ enabled, settings, scheme: resolveScheme(settings.theme, !!(mq && mq.matches)), siteOff: siteDisabled(settings, location.hostname) });
+  // "off on this site" means the site the user sees: the top-level page, not a
+  // third-party iframe's own hostname
+  const siteHost = () => {
+    try { return window.top.location.hostname; } catch { /* cross-origin frame */ }
+    try { if (document.referrer) return new URL(document.referrer).hostname; } catch { /* ignore */ }
+    return location.hostname;
+  };
+  const apply = () => configure({ enabled, settings, scheme: resolveScheme(settings.theme, !!(mq && mq.matches)), siteOff: siteDisabled(settings, siteHost()) });
 
   chrome.storage.local.get(['enabled', 'settings'], (raw) => {
     enabled = raw.enabled === true;

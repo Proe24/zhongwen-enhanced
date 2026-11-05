@@ -51,3 +51,15 @@ describe('plainPinyin', () => {
     expect(plainPinyin('nu:3')).toBe('nv');
   });
 });
+
+describe('marksToNumbers', () => {
+  it('converts tone-marked pinyin back to numbers', async () => {
+    const { marksToNumbers } = await import('../src/shared/pinyin.js');
+    expect(marksToNumbers('chuán tǒng')).toBe('chuan2 tong3');
+    expect(marksToNumbers('nǚ')).toBe('nv3');
+    expect(marksToNumbers('ma')).toBe('ma');
+    expect(marksToNumbers('ni3 hao3')).toBe('ni3 hao3');
+    expect(marksToNumbers('Běi jīng')).toBe('Bei3 jing1');
+    expect(marksToNumbers('')).toBe('');
+  });
+});

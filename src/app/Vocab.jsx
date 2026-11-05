@@ -46,7 +46,7 @@ export function Vocab({ st }) {
       const ext = format === 'csv' ? 'csv' : 'txt';
       downloadText(`zhongwen-vocab-${format}.${ext}`, r.text, format === 'csv' ? 'text/csv' : 'text/plain');
       toast(`${r.count} words exported for ${format === 'anki' ? 'Anki' : format === 'pleco' ? 'Pleco' : 'CSV'}`);
-    });
+    }).catch((e) => toast(e.message || 'Export failed'));
   };
 
   if (!Object.keys(st.vocab).length) {

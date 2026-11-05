@@ -23,6 +23,7 @@ export function Review({ st, route }) {
   const [revealed, setRevealed] = useState(false);
   const [grading, setGrading] = useState(false);
   const [againCount, setAgainCount] = useState(0);
+  const [err, setErr] = useState(null);
   const start = () => { const q = reviewQueue(st, Date.now(), scope); setQueue(shuffle([...q.due, ...q.fresh]).map((c) => ({ ...c, step: 0 }))); setDone(0); setRevealed(false); setAgainCount(0); };
   useEffect(start, [route.query.title]); // eslint-disable-line
 
@@ -43,7 +44,14 @@ export function Review({ st, route }) {
         if (res && res.learning) { const back = { ...head, step: head.step + 1 }; const gap = Math.min(rest.length, 2 + Math.floor(Math.random() * 3)); return [...rest.slice(0, gap), back, ...rest.slice(gap)]; }
         return rest;
       });
-    }).catch(() => setGrading(false));
+    }).catch((e) => {
+      // the word vanished (removed in another tab, a restore): skip it instead of sticking
+      setGrading(false);
+      setRevealed(false);
+      setErr(e && e.message ? e.message : 'Could not grade');
+      setTimeout(() => setErr(null), 2500);
+      setQueue(([, ...rest]) => rest);
+    });
   };
 
   // one listener for the whole session; it reads the latest state through a ref
@@ -107,6 +115,7 @@ export function Review({ st, route }) {
           </>
         ) : <div class="rev-hint">tap or press space to reveal</div>}
       </div>
+      {err && <div class="toast">{err}</div>}
       {revealed && (
         <div class="grades">
           {GRADES.map((g, i) => <button key={g} class={`grade ${g}`} disabled={grading} onClick={() => grade(g)}><b>{LABEL[g]}</b><span>{previews[g]} · {i + 1}</span></button>)}

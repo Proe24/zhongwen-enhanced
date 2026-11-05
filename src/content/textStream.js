@@ -39,7 +39,7 @@ function visible(el, cache) {
 }
 
 // [{ node, off, ch }] for every visible character in `block` (capped)
-export function streamOf(block, limit = 20000) {
+export function streamOf(block, limit = 60000) {
   const doc = block.ownerDocument;
   const cache = new Map();
   const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
@@ -121,16 +121,22 @@ export function caretAt(doc, x, y) {
   } else return null;
   if (!node || node.nodeType !== Node.TEXT_NODE) return null;
   const len = node.data.length;
+  const data = node.data;
   const hit = (o) => {
     if (o < 0 || o >= len) return false;
+    // probe the whole code point, not half of a surrogate pair
+    const code = data.charCodeAt(o);
+    if (code >= 0xdc00 && code <= 0xdfff) o -= 1; // low surrogate → start at the high one
+    const end = Math.min(len, o + (data.charCodeAt(o) >= 0xd800 && data.charCodeAt(o) <= 0xdbff ? 2 : 1));
     const r = doc.createRange();
     r.setStart(node, o);
-    r.setEnd(node, Math.min(len, o + 1));
+    r.setEnd(node, end);
     const rect = r.getBoundingClientRect();
     return rect.width > 0 && x >= rect.left - 1 && x <= rect.right + 1 && y >= rect.top - 1 && y <= rect.bottom + 1;
   };
   if (hit(offset)) return { node, offset };
   if (hit(offset - 1)) return { node, offset: offset - 1 };
+  if (hit(offset - 2)) return { node, offset: offset - 2 }; // caret after a surrogate pair
   return null;
 }
 
