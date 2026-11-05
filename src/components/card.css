@@ -11,7 +11,7 @@
 .zw-hero-word { font-size: 40px; line-height: 1.05; flex-shrink: 0; letter-spacing: 0.02em; }
 .zw-hero-word.zw-long { font-size: 28px; }
 .zw-hero-side { flex: 1; min-width: 0; padding-top: 3px; }
-.zw-hero-py { font-size: 19px; line-height: 1.2; }
+.zw-hero-py { font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
 .zw-hero-meta { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .zw-other { display: inline-flex; align-items: baseline; gap: 5px; font-size: 17px; }
 .zw-other-label { font-size: 10.5px; font-weight: 700; color: var(--zw-text-faint); }

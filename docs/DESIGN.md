@@ -135,6 +135,84 @@ marked **(changed)**.
   sentences (list names become the source title). The raw copy is kept under
   `v1Wordlist` until the user clears data.
 
-### S6–S11
+### S6 — Library
 
-See the sections added as each story landed below.
+- *Where does the Library get its state, and how does it stay live?* One
+  `state` message on load, then `chrome.storage.onChanged` triggers a refetch.
+  The pages never write storage themselves.
+- *Grouping by page title — what about words looked up in the toolbar or the
+  Dictionary screen?* They carry the title "Looked up"; the 1.x import carries
+  its old list name. Titles are the grouping key, hostnames the fallback.
+- *Search across what?* Hanzi (either script), accent-insensitive pinyin, the
+  meaning, the sentence and the note — all local, no worker round trip.
+
+### S7 — Review
+
+- *Why FSRS over SM-2?* It's what modern Anki runs; ts-fsrs is MIT, offline,
+  dependency-free. Cards are stored as plain objects with ISO dates
+  **(changed)** — the first build stored `Date` objects, which `chrome.storage`
+  silently flattens to `{}`; the second grade of a card then failed. A unit
+  test now round-trips a card through JSON.
+- *Can a fast typist hit a stale handler?* They could: the first build
+  re-registered the keyboard listener in an effect, so a key pressed right after
+  a render saw old state. **(changed)** One listener reads live state through a
+  ref. Space only reveals; it no longer doubles as "Good".
+- *A word marked Again — does it vanish until tomorrow?* No: while the card is
+  in FSRS learning steps it is reinserted a few cards ahead in the same session.
+- *Daily limits?* Separate caps for never-reviewed and due cards, counted per
+  local day in `daily`; a stale record resets.
+
+### S8 — Sentence panel
+
+- *Where does the sentence come from?* `t` on a popup takes the current page
+  selection if it has Han characters, else the sentence around the word
+  (cut at `。！？；`). `t` with no popup takes the selection. The context menu
+  sends the selection from the worker to the right frame.
+- *Segmentation quality?* Bidirectional maximum matching with the usual
+  tie-breaks (fewer tokens, then fewer single-character fragments, then the
+  backward pass). Unit-tested on the classic 經傳統中醫 trap.
+- *Two cards on screen at once?* No: opening the panel hides the popup and
+  suspends hover lookups until it closes.
+
+### S9 — Export and backup
+
+- *Formats?* Anki's tab-separated import with a `#columns` header (fields:
+  simplified, traditional, pinyin with marks, meaning, sentence, source, note),
+  Pleco's `简体[繁體]<tab>pinyin<tab>definition`, and quoted CSV. Export scope is
+  the current Library view or one source group.
+- *Restore: merge or replace?* Both, chosen explicitly; merge keeps the local
+  copy of a conflicting word and dedupes sentences by id.
+
+### S10 — Settings
+
+- *How do settings reach a page that is already open?* The content script
+  listens to `chrome.storage.onChanged`; the engine re-derives CSS variables and
+  re-renders an open popup. Verified end to end (palette + pinyin style).
+- *Popup size with CSS `zoom`?* Lengths set on a zoomed element are multiplied
+  by the zoom, so placement divides them out. Verified at 130%.
+
+### S11 — Stats, help, docs
+
+- *What counts as activity for the streak?* Saving or reviewing (not lookups,
+  which are passive). An unused "today" doesn't break a streak until tomorrow.
+- *Lookups counted without a write per hover?* Counted in memory and flushed
+  every 15 s; recent words are kept (capped at 60) only after a popup has been
+  on screen for ~0.9 s.
+
+### S12 — Verification
+
+- `npm test`: pure modules. `npm run e2e`: loads `dist/` into headless Chromium
+  and drives it — on/off, hover, chips, keyboard navigation across blocks,
+  save with sentence, drill-down, copy, pin, traditional text across inline
+  elements, sentence panel, popup scaling, the Library (vocab, note, review
+  grading, dictionary search, settings reaching the page, exports as real
+  downloads), and the toolbar popup. CI runs all of it on every push.
+- A separate unanchored code review of the worker, engine and text stream was
+  run before release; its findings and fixes are in the changelog.
+
+## Known limits
+
+- No lookups inside `<input>`/`<textarea>` (1.x had this; dropped for now).
+- Firefox is unsupported (CSS Highlight API, MV3 worker).
+- Only the first reading's pinyin is tone-aligned to characters; readings whose
+  syllable count differs from the character count render uncolored.

@@ -348,6 +348,7 @@ try {
     await app.goto(`chrome-extension://${extId}/app/index.html#/${r}`);
     await app.waitForTimeout(250);
     check((await app.evaluate(() => document.querySelector('h1') && document.querySelector('h1').innerText)) !== null, `${r} renders`);
+    await app.screenshot({ path: resolve(OUT, `${r}.png`), fullPage: true });
   }
 
   console.log('17. toolbar popup: switch toggles lookups, search works');
