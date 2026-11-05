@@ -5,7 +5,8 @@ import css from './content.css?inline';
 
 let host = null;
 let root = null;
-let mount = null;
+let mount = null; // the popup's mount
+const mounts = {}; // named mounts: 'panel'
 
 export function ensureHost() {
   if (host && host.isConnected) return mount;
@@ -23,6 +24,12 @@ export function ensureHost() {
 }
 
 export function renderInto(vnode) { render(vnode, ensureHost()); }
+// a second, independent mount in the same shadow root (the sentence panel)
+export function mountFor(name) {
+  ensureHost();
+  if (!mounts[name]) { const el = document.createElement('div'); el.className = `zw-root zw-mount-${name}`; root.append(el); mounts[name] = el; }
+  return mounts[name];
+}
 export function unmountAll() { if (mount) render(null, mount); }
 export function hostEl() { return host; }
 export function isInsideHost(target) {

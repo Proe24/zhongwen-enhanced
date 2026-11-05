@@ -124,6 +124,8 @@ try {
   await page.keyboard.press('s');
   await waitPopup((x) => x && /Save/.test(x.saved) && !/Saved/.test(x.saved));
   check(!(await sw.evaluate(() => chrome.storage.local.get('vocab').then((r) => !!r.vocab['人民银行']))), 'second s removes it');
+  await page.keyboard.press('s'); // keep it saved for the Library checks below
+  await waitPopup((x) => x && /Saved/.test(x.saved));
 
   console.log('6b. clicking a character row drills into it; back returns');
   await page.evaluate(() => document.querySelector('zhongwen-enhanced').shadowRoot.querySelectorAll('.zw-char-row')[1].click());
@@ -135,8 +137,9 @@ try {
   check(p && p.word === '人民银行', 'back to the word');
 
   console.log('6c. c copies word, pinyin and meaning');
+  await waitPopup((x) => x && !x.toast, 3000); // let the save toast clear
   await page.keyboard.press('c');
-  p = await waitPopup((x) => x && x.toast);
+  p = await waitPopup((x) => x && x.toast === 'Copied');
   check(p && p.toast === 'Copied', `toast "${p && p.toast}"`);
   const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '');
   check(clip === "人民银行\tRén mín Yín háng\tPeople's Bank of China", `clipboard: ${JSON.stringify(clip)}`);
@@ -180,23 +183,188 @@ try {
   check(p && p.word === '最后', `after n across blocks: ${p && p.word}`);
   check((await page.evaluate(() => window.scrollY)) > 500, 'page scrolled to the word');
 
+  console.log('10b. sentence panel: t breaks the sentence down; save; a word opens its card');
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.mouse.move(900, 700);
+  await page.waitForTimeout(200);
+  await hoverChar('p1', 12); // 今 in the second sentence
+  p = await waitPopup((x) => x && x.word === '今天');
+  await page.keyboard.press('t');
+  const panel = () => page.evaluate(() => {
+    const el = document.querySelector('zhongwen-enhanced').shadowRoot.querySelector('.zw-panel');
+    if (!el) return null;
+    return { words: [...el.querySelectorAll('.zw-tok .zw-han')].map((x) => x.textContent), head: el.querySelector('.zw-label').textContent, save: el.querySelector('.zw-panel-actions .zw-btn').textContent, card: el.querySelector('.zw-panel-word .zw-hero-word') ? el.querySelector('.zw-panel-word .zw-hero-word').textContent : null };
+  });
+  let pn = null;
+  for (let i = 0; i < 40 && !(pn && pn.words.length); i++) { await page.waitForTimeout(100); pn = await panel(); }
+  check(pn && pn.words.join(' ') === '今天 天气 很 好 我们 去 公园 散步 吧', `tokens: ${pn && pn.words.join(' ')}`);
+  check((await popup()) === null, 'popup closed when the panel opened');
+  await page.evaluate(() => document.querySelector('zhongwen-enhanced').shadowRoot.querySelectorAll('.zw-tok')[1].click());
+  for (let i = 0; i < 30 && !(pn && pn.card); i++) { await page.waitForTimeout(100); pn = await panel(); }
+  check(pn && pn.card === '天气', `clicked word card: ${pn && pn.card}`);
+  await page.evaluate(() => document.querySelector('zhongwen-enhanced').shadowRoot.querySelector('.zw-panel-actions .zw-btn').click());
+  for (let i = 0; i < 30 && !(pn && /saved/.test(pn.save)); i++) { await page.waitForTimeout(100); pn = await panel(); }
+  check(pn && /Sentence saved/.test(pn.save), `save button reads "${pn && pn.save}"`);
+  const sents = await sw.evaluate(() => chrome.storage.local.get('sentences').then((r) => r.sentences));
+  check(sents.length === 1 && sents[0].text === '今天天气很好，我们去公园散步吧！' && sents[0].title === '测试页面', `stored sentence: ${sents[0] && sents[0].text}`);
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(OUT, 'sentence.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  check((await panel()) === null, 'esc closes the panel');
+
+  console.log('10c. t on a plain selection (no popup) opens the panel');
+  await page.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById('p2')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+  await page.keyboard.press('t');
+  pn = null;
+  for (let i = 0; i < 40 && !(pn && pn.words.length); i++) { await page.waitForTimeout(100); pn = await panel(); }
+  check(pn && pn.words.includes('傳統') && pn.words.includes('中醫'), `selection tokens: ${pn && pn.words.join(' ')}`);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => getSelection().removeAllRanges());
+
+  console.log('10d. popup size 130%: still anchored to the word; tall card shrinks instead of covering it');
+  await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => chrome.storage.local.set({ settings: { ...r.settings, popupScale: 1.3 } })));
+  await page.waitForTimeout(250);
+  await page.mouse.move(900, 700);
+  await page.waitForTimeout(200);
+  const box2 = await hoverChar('p1', 2);
+  p = await waitPopup((x) => x && x.word === '中国人民银行');
+  check(p && p.rect.top > box2.y && Math.abs(p.rect.left - box2.x) < 60, `scaled popup below the word (top ${p && Math.round(p.rect.top)} vs y ${Math.round(box2.y)})`);
+  check(p && p.rect.bottom <= 800 && p.rect.width > 420, `fits the viewport (bottom ${p && Math.round(p.rect.bottom)}, width ${p && Math.round(p.rect.width)})`);
+  await page.keyboard.press('Escape');
+  await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => chrome.storage.local.set({ settings: { ...r.settings, popupScale: 1 } })));
+  await page.waitForTimeout(200);
+
   console.log('11. turn off: popup disappears and hovering is inert');
   await sw.evaluate(() => chrome.storage.local.set({ enabled: false }));
   await page.waitForTimeout(300);
   check((await popup()) === null, 'popup gone after turning off');
 
-  console.log('12. extension pages load');
+  console.log('12. Library: vocabulary lists the saved word with its sentence');
   const app = await ctx.newPage();
-  await app.goto(`chrome-extension://${extId}/app/index.html#/vocab`);
-  await app.waitForTimeout(800);
-  const appText = await app.evaluate(() => document.body.innerText);
-  check(/Zhongwen/.test(appText), 'library renders');
-  const pop = await ctx.newPage();
-  await pop.goto(`chrome-extension://${extId}/popup/index.html`);
-  await pop.waitForTimeout(600);
-  check(/Turn on|Turn off|On|Off/.test(await pop.evaluate(() => document.body.innerText)), 'toolbar popup renders');
   const errors = [];
-  for (const pg of [page, app, pop]) pg.on('pageerror', (e) => errors.push(e.message));
+  app.on('pageerror', (e) => errors.push(e.message));
+  app.on('dialog', (d) => d.accept());
+  await app.goto(`chrome-extension://${extId}/app/index.html#/vocab`);
+  await app.waitForSelector('.vrow', { timeout: 5000 });
+  let text = await app.evaluate(() => document.body.innerText);
+  check(/人民银行/.test(text) && /RénmínYínháng/.test(text), 'row shows hanzi + pinyin');
+  check(/测试页面/.test(text), 'grouped under the page title');
+  await app.click('.vrow');
+  await app.waitForSelector('.vdetail');
+  text = await app.evaluate(() => document.querySelector('.vdetail').innerText);
+  check(/我是中国人民银行的职员。/.test(text), 'detail shows the sentence');
+  check(!!(await app.$('.vdetail mark')), 'word is marked inside the sentence');
+  await app.screenshot({ path: resolve(OUT, 'vocab.png') });
+  await app.fill('.vdetail textarea', 'central bank');
+  await app.click('h1'); // blur → save
+  await app.waitForTimeout(300);
+  const noted = await sw.evaluate(() => chrome.storage.local.get('vocab').then((r) => r.vocab['人民银行'].note));
+  check(noted === 'central bank', `note persisted: ${noted}`);
+
+  console.log('12b. Library: exports download');
+  const dl = async (fn) => { const [d] = await Promise.all([app.waitForEvent('download', { timeout: 5000 }), fn()]); return { name: d.suggestedFilename(), text: await (await import('node:fs/promises')).readFile(await d.path(), 'utf8') }; };
+  await app.click('.menu .btn');
+  const anki = await dl(() => app.click('.menu-list button:has-text("Anki")'));
+  check(anki.name === 'zhongwen-vocab-anki.txt' && /^#separator:tab/.test(anki.text) && /人民银行\t人民銀行\tRén mín Yín háng/.test(anki.text), `anki export: ${anki.name}`);
+  await app.goto(`chrome-extension://${extId}/app/index.html#/settings`);
+  await app.waitForSelector('.btn-primary');
+  const bk = await dl(() => app.click('button:has-text("Download backup")'));
+  const parsed = JSON.parse(bk.text);
+  check(parsed.app === 'zhongwen-enhanced' && parsed.data.vocab['人民银行'] && parsed.data.sentences.length === 1, `backup file: ${bk.name}`);
+  await app.goto(`chrome-extension://${extId}/app/index.html#/sentences`);
+  await app.waitForSelector('.vrow', { timeout: 5000 });
+  await app.click('.vrow');
+  await app.waitForSelector('.vdetail .zw-han', { timeout: 5000 });
+  check(/今天/.test(await app.evaluate(() => document.querySelector('.vdetail').innerText)), 'sentences screen breaks a saved sentence down');
+  await app.screenshot({ path: resolve(OUT, 'sentences.png') });
+
+  console.log('13. Library: review a card');
+  await app.goto(`chrome-extension://${extId}/app/index.html#/review`);
+  await app.waitForSelector('.rev-card', { timeout: 5000 });
+  check(/1 \/ 1/.test(await app.evaluate(() => document.querySelector('.rev-top').innerText)), 'one card queued');
+  check(!(await app.$('.rev-py')), 'front hides pinyin');
+  await app.keyboard.press('Space');
+  await app.waitForSelector('.rev-py');
+  text = await app.evaluate(() => document.querySelector('.rev-card').innerText);
+  check(/RénmínYínháng/.test(text) && /People's Bank/.test(text) && /职员/.test(text), 'back shows pinyin, meaning, sentence');
+  await app.screenshot({ path: resolve(OUT, 'review.png') });
+  const grades = await app.evaluate(() => [...document.querySelectorAll('.grade')].map((g) => g.innerText.replace(/\s+/g, ' ')));
+  check(grades.length === 4 && /Again/.test(grades[0]) && /Easy/.test(grades[3]), `grade buttons: ${grades.join(' | ')}`);
+  await app.keyboard.press('3'); // Good keeps a new card in learning → it comes back this session
+  await app.waitForFunction(() => document.querySelector('.rev-hint') && /again/.test(document.querySelector('.rev-top').innerText), null, { timeout: 5000 });
+  check(true, 'learning card re-queued');
+  await app.keyboard.press('Space');
+  await app.waitForSelector('.grade');
+  await app.keyboard.press('4'); // Easy graduates it
+  await app.waitForSelector('.rev-done', { timeout: 5000 }).catch(async () => { console.log('    review state:', (await app.evaluate(() => document.querySelector('.main').innerText)).replace(/\n+/g, ' | ')); console.log('    srs:', JSON.stringify(await sw.evaluate(() => chrome.storage.local.get('srs').then((r) => r.srs)))); });
+  const srs = await sw.evaluate(() => chrome.storage.local.get(['srs', 'daily']).then((r) => r));
+  check(srs.srs['人民银行'] && srs.srs['人民银行'].reps === 2, `card graded twice (reps ${srs.srs['人民银行'] && srs.srs['人民银行'].reps})`);
+  check(srs.daily && srs.daily.newDone === 1 && srs.daily.reviewDone === 1, `daily counters: new ${srs.daily && srs.daily.newDone}, review ${srs.daily && srs.daily.reviewDone}`);
+  check(/2 cards reviewed/.test(await app.evaluate(() => document.body.innerText)), 'finish screen');
+
+  console.log('14. Library: dictionary search');
+  await app.goto(`chrome-extension://${extId}/app/index.html#/dictionary?q=nihao`);
+  await app.waitForSelector('.wrow', { timeout: 5000 });
+  text = await app.evaluate(() => document.querySelector('.list').innerText);
+  check(/你好/.test(text), 'pinyin search finds 你好');
+  await app.waitForSelector('.dict-card .zw-card');
+  check(/nǐhǎo/.test(await app.evaluate(() => document.querySelector('.dict-card').innerText)), 'first result opens as a card');
+  await app.screenshot({ path: resolve(OUT, 'dictionary.png') });
+  await app.goto(`chrome-extension://${extId}/app/index.html#/dictionary?q=tradition`);
+  await app.waitForFunction(() => /传统/.test(document.body.innerText), null, { timeout: 5000 }).catch(() => {});
+  check(/传统/.test(await app.evaluate(() => document.body.innerText)), 'English search finds 传统');
+
+  console.log('15. Library: a settings change reaches the page popup');
+  await app.goto(`chrome-extension://${extId}/app/index.html#/settings`);
+  await app.waitForSelector('.seg');
+  await app.screenshot({ path: resolve(OUT, 'settings.png'), fullPage: true });
+  await app.click('.seg button:has-text("Pleco")');
+  await app.waitForTimeout(300);
+  const pal = await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => r.settings.tonePalette));
+  check(pal === 'pleco', `palette saved: ${pal}`);
+  await app.click('.seg button:has-text("ni3 hao3")');
+  await app.waitForTimeout(200);
+  await sw.evaluate(() => chrome.storage.local.set({ enabled: true }));
+  await page.bringToFront();
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.mouse.move(900, 700);
+  await page.waitForTimeout(300);
+  await hoverChar('p1', 2);
+  p = await waitPopup();
+  check(p && p.py === 'Zhong1 guo2 Ren2 min2 Yin2 hang2', `popup now shows numbered pinyin: ${p && p.py}`);
+  const t1 = await page.evaluate(() => { const el = document.querySelector('zhongwen-enhanced').shadowRoot.querySelector('.zw-t1'); return el ? getComputedStyle(el).color : null; });
+  check(t1 === 'rgb(211, 47, 47)', `tone-1 color is Pleco red: ${t1}`);
+  await page.keyboard.press('Escape');
+
+  console.log('16. Library: remove a word; sentences + stats + help render');
+  await app.goto(`chrome-extension://${extId}/app/index.html#/vocab`);
+  await app.waitForSelector('.vrow');
+  await app.click('.vrow');
+  await app.click('.vdetail .btn-danger');
+  await app.waitForFunction(() => /No words yet/.test(document.body.innerText), null, { timeout: 5000 }).catch(() => {});
+  check(/No words yet/.test(await app.evaluate(() => document.body.innerText)), 'removed → empty state');
+  for (const r of ['sentences', 'stats', 'help']) {
+    await app.goto(`chrome-extension://${extId}/app/index.html#/${r}`);
+    await app.waitForTimeout(250);
+    check((await app.evaluate(() => document.querySelector('h1') && document.querySelector('h1').innerText)) !== null, `${r} renders`);
+  }
+
+  console.log('17. toolbar popup: switch toggles lookups, search works');
+  const pop = await ctx.newPage();
+  pop.on('pageerror', (e) => errors.push(e.message));
+  await pop.goto(`chrome-extension://${extId}/popup/index.html`);
+  await pop.waitForSelector('.switch');
+  check(/Lookups are on/.test(await pop.evaluate(() => document.body.innerText)), 'shows on');
+  await pop.click('.pop-head .switch');
+  await pop.waitForFunction(() => /Lookups are off/.test(document.body.innerText), null, { timeout: 3000 });
+  check(!(await sw.evaluate(() => chrome.storage.local.get('enabled').then((r) => r.enabled))), 'switch turned lookups off');
+  await pop.fill('.pop-search input', 'xuexi');
+  await pop.waitForSelector('.pop-results .wrow', { timeout: 4000 });
+  check(/学习/.test(await pop.evaluate(() => document.querySelector('.pop-results').innerText)), 'popup search finds 学习');
+  await pop.setViewportSize({ width: 320, height: 600 });
+  await pop.screenshot({ path: resolve(OUT, 'toolbar.png') });
+  check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await ctx.close();
   srv.close();

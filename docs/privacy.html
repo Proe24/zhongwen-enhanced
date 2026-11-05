@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Zhongwen Enhanced</title>
+<style>
+  body { max-width: 720px; margin: 40px auto; padding: 0 20px; font: 16px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; color: #2a2521; background: #f4f0e7; }
+  h1 { font-size: 26px; } h2 { font-size: 18px; margin-top: 28px; }
+  a { color: #b84e2c; } code { background: #efeadf; padding: 1px 5px; border-radius: 4px; }
+  @media (prefers-color-scheme: dark) { body { background: #0e0e0f; color: #f3efe9; } a { color: #ec9277; } code { background: #2a2a2c; } }
+</style>
+</head>
+<body>
+<h1>Privacy Policy — Zhongwen Enhanced</h1>
+<p><em>Last updated: 2026-11-05 (version 2.0)</em></p>
+<p>Zhongwen Enhanced is a browser extension that shows a Chinese–English dictionary card for the text you hover, and keeps a vocabulary list you can review.</p>
+<h2>In short</h2>
+<ul>
+<li>The extension <strong>makes no network requests</strong>. The dictionary and HSK word lists ship inside the package; all lookups happen on your device. No servers, no accounts, no analytics.</li>
+<li>It keeps only what you save on purpose: words (with the sentence, page title and page address they came from), sentences, notes, review progress, recent lookups and settings — in the browser's extension storage (<code>chrome.storage.local</code>) on your device.</li>
+<li>Nothing is shared with the developer or anyone else. Data leaves your device only when <strong>you</strong> export it.</li>
+</ul>
+<h2>What it reads on web pages</h2>
+<p>To look words up, the content script reads the text under your pointer, the surrounding sentence, and the page title and address when you save a word or sentence. It is inert while lookups are off or on sites you switched it off for, and it never reads form fields. It changes nothing on the page beyond highlighting the hovered word and showing its own popup.</p>
+<h2>Permissions</h2>
+<ul>
+<li><strong>storage / unlimitedStorage</strong> — keep your vocabulary and settings locally.</li>
+<li><strong>contextMenus</strong> — the “Break down with Zhongwen” right-click item.</li>
+<li><strong>activeTab</strong> — the current tab's address, so the toolbar popup can offer “off on this site”.</li>
+<li><strong>Access to all sites</strong> — the popup has to run on whatever page you read; it does nothing until you turn lookups on.</li>
+</ul>
+<h2>Text-to-speech</h2>
+<p>“Listen” uses the browser's built-in speech synthesis. Voices are usually local; some browsers may use a network voice provided by the browser vendor under that vendor's policy. The extension itself sends nothing.</p>
+<h2>Removing your data</h2>
+<p>Settings → Your data → Clear deletes words, sentences and progress. Uninstalling removes everything the extension stored.</p>
+<h2>Contact</h2>
+<p>Questions or changes: <a href="https://github.com/Proe24/zhongwen-enhanced">github.com/Proe24/zhongwen-enhanced</a>.</p>
+</body>
+</html>

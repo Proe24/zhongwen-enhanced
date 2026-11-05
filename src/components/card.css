@@ -1,0 +1,59 @@
+/* card.css — the word card, shared by the in-page popup (shadow root) and the pages */
+/* tone colors */
+.zw-t1 { color: var(--zw-tone1); } .zw-t2 { color: var(--zw-tone2); } .zw-t3 { color: var(--zw-tone3); } .zw-t4 { color: var(--zw-tone4); } .zw-t0 { color: var(--zw-tone0); }
+.zw-han { font-family: var(--zw-font-han); font-weight: 500; }
+.zw-han-trad { font-family: var(--zw-font-han-trad), var(--zw-font-han); }
+.zw-py { font-weight: 600; }
+
+/* card */
+.zw-card { padding: 14px 16px 12px; }
+.zw-hero { display: flex; align-items: flex-start; gap: 14px; }
+.zw-hero-word { font-size: 40px; line-height: 1.05; flex-shrink: 0; letter-spacing: 0.02em; }
+.zw-hero-word.zw-long { font-size: 28px; }
+.zw-hero-side { flex: 1; min-width: 0; padding-top: 3px; }
+.zw-hero-py { font-size: 19px; line-height: 1.2; }
+.zw-hero-meta { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.zw-other { display: inline-flex; align-items: baseline; gap: 5px; font-size: 17px; }
+.zw-other-label { font-size: 10.5px; font-weight: 700; color: var(--zw-text-faint); }
+.zw-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; background: var(--zw-accent-tint); color: var(--zw-accent-text); }
+.zw-badge-fam { background: var(--zw-good-tint); color: var(--zw-good); }
+.zw-fam-new { background: var(--zw-accent-tint); color: var(--zw-accent-text); }
+
+.zw-senses { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.zw-senses li { display: flex; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--zw-text); }
+.zw-senses .zw-n { color: var(--zw-text-faint); font-variant-numeric: tabular-nums; min-width: 14px; flex-shrink: 0; font-size: 12.5px; padding-top: 1px; }
+.zw-more-senses span:last-child { color: var(--zw-text-faint); font-size: 12.5px; }
+
+.zw-readings { margin-top: 10px; border-top: 1px solid var(--zw-border); padding-top: 8px; display: flex; flex-direction: column; gap: 7px; }
+.zw-reading-head { display: flex; align-items: baseline; gap: 10px; font-size: 15px; }
+.zw-reading-trad { font-size: 12px; color: var(--zw-text-faint); }
+.zw-reading-trad .zw-han { font-size: 14px; color: var(--zw-text-soft); }
+.zw-reading-defs { font-size: 13px; color: var(--zw-text-soft); line-height: 1.4; }
+
+.zw-section { margin-top: 12px; }
+.zw-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--zw-text-faint); margin-bottom: 6px; }
+.zw-chars { display: flex; flex-direction: column; gap: 4px; }
+.zw-char-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--zw-border); background: var(--zw-surface); color: var(--zw-text); cursor: pointer; font: inherit; text-align: left; }
+.zw-char-row:hover { background: var(--zw-surface-hi); }
+.zw-char-glyph { font-size: 22px; width: 28px; text-align: center; flex-shrink: 0; }
+.zw-char-py { font-size: 13px; width: 58px; flex-shrink: 0; }
+.zw-char-gloss { flex: 1; min-width: 0; font-size: 12.5px; color: var(--zw-text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zw-faint { color: var(--zw-text-faint); font-style: italic; }
+.zw-chev { color: var(--zw-text-faint); font-size: 16px; }
+
+.zw-note { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--zw-surface); font-size: 13px; color: var(--zw-text-soft); white-space: pre-wrap; }
+.zw-note .zw-label { margin-bottom: 2px; }
+
+.zw-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.zw-btn { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 11px; border-radius: 20px; border: 1px solid var(--zw-border); background: var(--zw-surface-hi); color: var(--zw-text-soft); cursor: pointer; line-height: 1.2; }
+.zw-btn:hover { color: var(--zw-text); border-color: var(--zw-border-strong); }
+.zw-btn:disabled { opacity: 0.6; cursor: default; }
+.zw-btn-primary { background: var(--zw-accent); color: var(--zw-on-accent); border-color: transparent; }
+.zw-btn-primary:hover { color: var(--zw-on-accent); filter: brightness(1.06); }
+.zw-btn-on { background: var(--zw-accent-tint); color: var(--zw-accent-text); border-color: transparent; }
+.zw-btn-quiet { background: transparent; }
+
+
+.zw-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 12px; }
+.zw-links a { color: var(--zw-text-faint); text-decoration: none; font-weight: 600; }
+.zw-links a:hover { color: var(--zw-accent-text); text-decoration: underline; }

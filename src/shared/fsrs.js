@@ -9,7 +9,23 @@ export const GRADES = ['again', 'hard', 'good', 'easy'];
 const DAY = 86400000;
 export const MATURE_DAYS = 21;
 
-export const newCard = (now = Date.now()) => createEmptyCard(new Date(now));
+// Cards are stored in chrome.storage, which flattens Date objects to {}. So a
+// card leaves this module with ISO strings for its dates, and comes back in
+// through hydrate() before ts-fsrs sees it.
+const iso = (d) => { const t = d instanceof Date ? d.getTime() : new Date(d).getTime(); return Number.isNaN(t) ? null : new Date(t).toISOString(); };
+export function plainCard(card) {
+  const out = { ...card, due: iso(card.due) };
+  if (card.last_review != null) { const lr = iso(card.last_review); if (lr) out.last_review = lr; else delete out.last_review; }
+  if (out.due == null) out.due = new Date().toISOString();
+  return out;
+}
+function hydrate(card) {
+  const due = new Date(card.due);
+  const out = { ...card, due: Number.isNaN(due.getTime()) ? new Date() : due };
+  if (card.last_review != null) { const lr = new Date(card.last_review); if (!Number.isNaN(lr.getTime())) out.last_review = lr; else delete out.last_review; }
+  return out;
+}
+export const newCard = (now = Date.now()) => plainCard(createEmptyCard(new Date(now)));
 
 const isCard = (c) => !!c && typeof c.state === 'number' && Number.isFinite(c.stability) && Number.isFinite(c.difficulty);
 const lastReviewAt = (c) => { const t = c && c.last_review != null ? new Date(c.last_review).getTime() : 0; return Number.isNaN(t) ? 0 : t; };
@@ -17,11 +33,11 @@ const lastReviewAt = (c) => { const t = c && c.last_review != null ? new Date(c.
 // Grade a card (or nothing: a word never reviewed) and return the next card.
 // Never throws: a damaged card is replaced by a fresh one graded once.
 export function gradeCard(card, gradeId, now = Date.now()) {
-  const base = isCard(card) ? card : newCard(now);
+  const base = hydrate(isCard(card) ? card : newCard(now));
   const at = new Date(Math.max(now, lastReviewAt(base)));
   const rating = RATING[gradeId] ?? Rating.Good;
-  try { return scheduler.next(base, at, rating).card; }
-  catch { try { return scheduler.next(newCard(now), new Date(now), rating).card; } catch { return newCard(now); } }
+  try { return plainCard(scheduler.next(base, at, rating).card); }
+  catch { try { return plainCard(scheduler.next(hydrate(newCard(now)), new Date(now), rating).card); } catch { return newCard(now); } }
 }
 
 export function dueAt(card) {

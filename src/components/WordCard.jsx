@@ -79,6 +79,15 @@ export function WordCard({ match, settings, compact = false, charInfo = null, on
 
       {note && !compact && <div class="zw-note"><span class="zw-label">Your note</span>{note}</div>}
 
+      {!compact && (
+        <div class="zw-links">
+          <a href={`https://www.mdbg.net/chinese/dictionary?page=worddict&wdrst=0&wdqb=${encodeURIComponent(entry.simp)}`} target="_blank" rel="noopener">MDBG</a>
+          <a href={`https://en.wiktionary.org/wiki/${encodeURIComponent(entry.simp)}`} target="_blank" rel="noopener">Wiktionary</a>
+          <a href={`https://forvo.com/search/${encodeURIComponent(entry.simp)}/zh/`} target="_blank" rel="noopener">Forvo</a>
+          <a href={`https://resources.allsetlearning.com/gramwiki/?search=${encodeURIComponent(entry.simp)}`} target="_blank" rel="noopener">Grammar wiki</a>
+        </div>
+      )}
+
       {extra}
 
       <div class="zw-actions">

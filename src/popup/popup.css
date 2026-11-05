@@ -1,8 +1,21 @@
-/* popup.css — the toolbar popup */
-html, body { margin: 0; padding: 0; }
-body { width: 300px; background: var(--zw-bg); color: var(--zw-text); font-family: var(--zw-font-ui); font-size: 13.5px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
-*, *::before, *::after { box-sizing: border-box; }
-button, input { font: inherit; color: inherit; }
-.zw-t1 { color: var(--zw-tone1); } .zw-t2 { color: var(--zw-tone2); } .zw-t3 { color: var(--zw-tone3); } .zw-t4 { color: var(--zw-tone4); } .zw-t0 { color: var(--zw-tone0); }
-.zw-han { font-family: var(--zw-font-han); font-weight: 500; }
-.zw-py { font-weight: 600; }
+@import '../components/base.css';
+body { width: 320px; }
+.pop { display: flex; flex-direction: column; }
+.pop-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px; }
+.pop-logo { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
+.pop-title { font-weight: 700; font-size: 14px; line-height: 1.2; }
+.pop-sub { font-size: 12px; color: var(--zw-text-faint); }
+.pop-site { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 12.5px; color: var(--zw-text-soft); border-top: 1px solid var(--zw-border); }
+.pop-search { padding: 10px 12px 4px; border-top: 1px solid var(--zw-border); }
+.pop-results { padding: 2px 6px 6px; max-height: 300px; overflow-y: auto; }
+.pop-entry { padding: 4px 6px 8px; }
+.pop-stats { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--zw-border); }
+.stat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 4px; border-radius: 12px; border: none; background: var(--zw-surface); color: inherit; cursor: pointer; }
+.stat:hover { background: var(--zw-surface-hi); }
+.stat b { font-size: 18px; font-weight: 700; line-height: 1.1; }
+.stat span { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--zw-text-faint); }
+.stat.hot b { color: var(--zw-accent-text); }
+.pop-links { display: flex; gap: 4px; padding: 0 12px 12px; }
+.pop-links .btn { flex: 1; }
+.pop .zw-card { padding: 10px 12px; }
+.pop .zw-hero-word { font-size: 32px; }

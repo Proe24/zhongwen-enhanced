@@ -45,7 +45,8 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "contextMenus"
+    "contextMenus",
+    "activeTab"
   ],
   "commands": {
     "toggle": {

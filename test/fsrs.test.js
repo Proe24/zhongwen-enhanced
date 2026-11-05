@@ -20,6 +20,20 @@ describe('fsrs wrapper', () => {
     expect(bucketOf(c, now)).toBe('due');
     expect(dueLabel(c, now)).toBe('Due');
   });
+  it('stores dates as ISO strings and survives a storage round trip', () => {
+    const now = Date.parse('2026-01-01T12:00:00Z');
+    const c1 = gradeCard(undefined, 'good', now);
+    expect(typeof c1.due).toBe('string');
+    expect(typeof c1.last_review).toBe('string');
+    const stored = JSON.parse(JSON.stringify(c1)); // what chrome.storage keeps
+    const c2 = gradeCard(stored, 'easy', now + 600000);
+    expect(c2.reps).toBe(2);
+    expect(dueAt(c2)).toBeGreaterThan(dueAt(c1));
+    // a card whose dates were flattened to {} (the pre-fix bug) still grades on
+    const c3 = gradeCard({ ...stored, due: {}, last_review: {} }, 'good', now + 900000);
+    expect(c3.reps).toBeGreaterThanOrEqual(1);
+    expect(typeof c3.due).toBe('string');
+  });
   it('heals a damaged card instead of throwing', () => {
     const c = gradeCard({ state: 2, stability: NaN, difficulty: 5, due: 'garbage' }, 'again');
     expect(c.reps).toBe(1);

@@ -32,8 +32,8 @@ for (const raw of text.split('\n')) {
   const line = raw.replace(/\r$/, '');
   if (!line) continue;
   if (line[0] === '#') {
-    const m = /^#! (date|version)=(.*)$/.exec(line);
-    if (m) version += `${m[1]}=${m[2]} `;
+    const m = /^#! date=(\d{4}-\d{2}-\d{2})/.exec(line);
+    if (m) version = m[1];
     continue;
   }
   const m = LINE.exec(line);
@@ -81,8 +81,8 @@ for (const [simp, readings] of bySimp) {
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
-const json = JSON.stringify({ v: 2, source: 'CC-CEDICT ' + version.trim(), words });
+const json = JSON.stringify({ v: 2, source: version ? `CC-CEDICT ${version}` : 'CC-CEDICT', words });
 const gz = gzipSync(json, { level: 9 });
 writeFileSync(new URL('words.json.gz', OUT_DIR), gz);
 const kb = (n) => (n / 1024).toFixed(0) + ' KB';
-console.log(`headwords ${bySimp.size}, aliases ${aliases}, ${kb(json.length)} → ${kb(gz.length)} gz (${version.trim()})`);
+console.log(`headwords ${bySimp.size}, aliases ${aliases}, ${kb(json.length)} → ${kb(gz.length)} gz (${version})`);

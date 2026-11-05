@@ -16,7 +16,7 @@ import { setHighlight, clearHighlight, ensureHighlightStyle } from './highlight.
 import { renderInto, unmountAll, isInsideHost, q } from './host.jsx';
 import { Popup } from './Popup.jsx';
 import { leadForms } from '../components/WordCard.jsx';
-import { openSentencePanel, sentencePanelOpen } from './sentence.jsx';
+import { openSentencePanel, sentencePanelOpen, updateSentencePanel } from './sentence.jsx';
 
 export const cfg = { enabled: false, settings: null, scheme: 'light', siteOff: false };
 let attached = false;
@@ -40,6 +40,15 @@ export function configure(patch) {
   if (active() && !attached) attach();
   if (!active() && attached) detach();
   if (cur) { cur.compact = cur.userCompact != null ? cur.userCompact : cfg.settings.compact; rerender(); }
+  if (cfg.settings) updateSentencePanel({ vars, settings: cfg.settings });
+}
+
+// open the sentence panel for any text (the context menu, a selection)
+export function openSentence(text) {
+  if (!cfg.settings) return false;
+  const ok = openSentencePanel(text, { vars, settings: cfg.settings });
+  if (ok) hide();
+  return ok;
 }
 
 function attach() {
@@ -164,17 +173,24 @@ function place() {
   const gap = 8;
   const margin = 8;
   const r = cur ? cur.wordRect : { left: mouse.x, right: mouse.x, top: mouse.y, bottom: mouse.y };
+  // lengths set on the element are multiplied by its CSS zoom, so divide them out
+  const scale = cfg.settings.popupScale || 1;
+  el.style.maxHeight = '';
   const box = el.getBoundingClientRect();
   const w = box.width;
   const h = box.height;
+  const below = vh - margin - (r.bottom + gap); // room under the word
+  const above = r.top - gap - margin; // room over it
   let top;
-  if (r.bottom + gap + h <= vh - margin) top = r.bottom + gap;
-  else if (r.top - gap - h >= margin) top = r.top - gap - h;
-  else top = Math.max(margin, Math.min(r.bottom + gap, vh - margin - h));
-  let left = Math.max(margin, Math.min(r.left, vw - margin - w));
-  el.style.top = `${Math.round(top)}px`;
-  el.style.left = `${Math.round(left)}px`;
-  el.style.maxHeight = `${Math.max(160, vh - 2 * margin)}px`;
+  let maxH = null;
+  if (h <= below) top = r.bottom + gap;
+  else if (h <= above) top = r.top - gap - h;
+  else if (below >= above) { top = r.bottom + gap; maxH = below; } // never cover the word: shrink and scroll
+  else { maxH = above; top = r.top - gap - Math.min(h, maxH); }
+  const left = Math.max(margin, Math.min(r.left, vw - margin - w));
+  el.style.top = `${Math.round(top / scale)}px`;
+  el.style.left = `${Math.round(left / scale)}px`;
+  if (maxH != null) el.style.maxHeight = `${Math.max(140, Math.floor(maxH / scale))}px`;
   if (cur) cur.popBox = el.getBoundingClientRect();
 }
 
@@ -240,7 +256,15 @@ const MOD_KEYS = { alt: 'Alt', ctrl: 'Control', shift: 'Shift' };
 function onKey(e) {
   const trig = cfg.settings.trigger;
   if (trig !== 'hover' && e.key === MOD_KEYS[trig] && !cur && mouse.x >= 0) { lookupAt(mouse.x, mouse.y); return; }
-  if (!cur || editable(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (editable(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (!cur) {
+    // `t` with text selected on the page and no popup: break the selection down
+    if (e.key.toLowerCase() === 't' && !sentencePanelOpen()) {
+      const sel = String(window.getSelection && window.getSelection());
+      if (sel.trim() && openSentence(sel)) { e.preventDefault(); e.stopPropagation(); }
+    }
+    return;
+  }
   const k = e.key === ' ' ? 'space' : e.key.toLowerCase();
   const fn = KEYS[k];
   if (!fn) return;
@@ -349,9 +373,8 @@ export const actions = {
   },
   sentence() {
     if (!cur) return;
-    const sent = T.sentenceAround(cur.stream, cur.idx, cur.matches[cur.sel].len, 300);
-    const ok = openSentencePanel(sent, { vars, settings: cfg.settings });
-    if (ok) hide();
+    const sel = String(window.getSelection && window.getSelection()).trim();
+    openSentence(sel && /\p{Script=Han}/u.test(sel) ? sel : T.sentenceAround(cur.stream, cur.idx, cur.matches[cur.sel].len, 300));
   },
   compact() { if (!cur) return; cur.compact = !cur.compact; cur.userCompact = cur.compact; rerender(); },
 };

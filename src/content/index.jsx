@@ -1,9 +1,8 @@
 // content/index.jsx — bootstrap: read the on/off flag and settings, keep them
 // live, and hand them to the engine. Does nothing on a page until lookups are on.
-import { configure, hide } from './engine.js';
+import { configure, openSentence } from './engine.js';
 import { normalizeSettings, siteDisabled } from '../shared/settings.js';
 import { resolveScheme } from '../shared/theme.js';
-import { openSentencePanel } from './sentence.jsx';
 
 (function main() {
   if (window.__zhongwenEnhanced) return; // injected twice (e.g. after an update)
@@ -28,9 +27,6 @@ import { openSentencePanel } from './sentence.jsx';
   mq && mq.addEventListener && mq.addEventListener('change', apply);
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'openSentence' && enabled) {
-      hide();
-      openSentencePanel(String(msg.text || ''), { settings });
-    }
+    if (msg && msg.type === 'openSentence') openSentence(String(msg.text || ''));
   });
 })();
