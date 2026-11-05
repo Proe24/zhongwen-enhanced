@@ -1,5 +1,7 @@
-node_modules
-.idea
-dist
-tools/mmh-dictionary.txt
-tools/cow-cmn.tab
+node_modules/
+dist/
+*.zip
+.env
+.claude/
+*.bak
+e2e/out/

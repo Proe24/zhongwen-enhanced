@@ -1,0 +1,8 @@
+/* popup.css — the toolbar popup */
+html, body { margin: 0; padding: 0; }
+body { width: 300px; background: var(--zw-bg); color: var(--zw-text); font-family: var(--zw-font-ui); font-size: 13.5px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+*, *::before, *::after { box-sizing: border-box; }
+button, input { font: inherit; color: inherit; }
+.zw-t1 { color: var(--zw-tone1); } .zw-t2 { color: var(--zw-tone2); } .zw-t3 { color: var(--zw-tone3); } .zw-t4 { color: var(--zw-tone4); } .zw-t0 { color: var(--zw-tone0); }
+.zw-han { font-family: var(--zw-font-han); font-weight: 500; }
+.zw-py { font-weight: 600; }

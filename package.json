@@ -1,33 +1,29 @@
 {
   "name": "zhongwen-enhanced",
-  "version": "1.0.0",
-  "description": "Chinese Pop-Up Dictionary with AI sentence breakdown (fork of Zhongwen)",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Proe24/zhongwen-enhanced.git"
-  },
-  "keywords": [
-    "Chinese",
-    "Dictionary"
-  ],
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zhongwen Enhanced — a calm Chinese pop-up dictionary and vocabulary trainer for Chrome. Offline, private, spaced repetition built in.",
   "author": "Stephen Underwood",
-  "license": "GPL-2.0",
-  "bugs": {
-    "url": "https://github.com/Proe24/zhongwen-enhanced/issues"
-  },
-  "homepage": "https://github.com/Proe24/zhongwen-enhanced#readme",
-  "devDependencies": {
-    "eslint": "^8.10.0",
-    "hanzi-writer": "^3.7.3",
-    "hanzi-writer-data": "^2.0.1",
-    "stylelint": "^14.5.3",
-    "stylelint-config-recommended": "^7.0.0"
-  },
-  "stylelint": {
-    "extends": "stylelint-config-recommended"
-  },
+  "license": "GPL-2.0-or-later",
+  "repository": { "type": "git", "url": "git+https://github.com/Proe24/zhongwen-enhanced.git" },
   "scripts": {
-    "lint": "eslint --fix *.js js/options.js js/wordlist.js js/zhuyin.js",
-    "csslint": "stylelint css/content.css css/wordlist.css"
+    "build": "node scripts/build.mjs",
+    "pack": "node scripts/build.mjs --zip",
+    "test": "vitest run",
+    "e2e": "node e2e/run.mjs",
+    "dict": "node data/build-dict.mjs",
+    "hsk": "node data/build-hsk.mjs",
+    "icons": "node scripts/icons.mjs"
+  },
+  "dependencies": {
+    "preact": "^11.1.1",
+    "ts-fsrs": "^6.0.0"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2",
+    "happy-dom": "^21.0.4",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
   }
 }
