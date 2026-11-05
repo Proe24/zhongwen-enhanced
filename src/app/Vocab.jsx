@@ -61,7 +61,7 @@ export function Vocab({ st }) {
     <div>
       <div class="page-head">
         <h1>Vocabulary</h1>
-        <span class="sub">{entries.length === Object.keys(st.vocab).length ? `${entries.length} words` : `${entries.length} of ${Object.keys(st.vocab).length} words`}</span>
+        <span class="sub">{entries.length === Object.keys(st.vocab).length ? `${entries.length} ${entries.length === 1 ? 'word' : 'words'}` : `${entries.length} of ${Object.keys(st.vocab).length} words`}</span>
         <div class="grow" />
         <button class="btn btn-primary" onClick={() => go('/review')}>Review</button>
         <div class="menu">
