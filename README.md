@@ -13,6 +13,8 @@ update.
 
 ## What it does
 
+A tour with screenshots is in [docs/FEATURES.md](docs/FEATURES.md).
+
 - **Hover to read.** Rest the pointer on a word: the longest dictionary match
   is highlighted in the page and a card shows the word with each character
   colored by tone, pinyin (tone marks, numbers or zhuyin), every meaning and

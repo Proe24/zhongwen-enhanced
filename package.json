@@ -12,6 +12,7 @@
     "pack": "node scripts/build.mjs --zip",
     "test": "vitest run",
     "e2e": "node e2e/run.mjs",
+    "shots": "node e2e/screenshots.mjs",
     "dict": "node data/build-dict.mjs",
     "hsk": "node data/build-hsk.mjs",
     "icons": "node scripts/icons.mjs"
