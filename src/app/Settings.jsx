@@ -55,7 +55,8 @@ export function Settings({ st }) {
         <h2>Looking up</h2>
         <Row title="Trigger" sub="Look up on hover, or only while holding a key"><Seg value={s.trigger} onChange={(v) => set({ trigger: v })} options={[['hover', 'Hover'], ['alt', 'Hold Alt'], ['ctrl', 'Hold Ctrl'], ['shift', 'Hold Shift']]} /></Row>
         <Row title="Hover delay" sub="How long the pointer rests on a word before it is looked up"><Range k="hoverDelay" min={0} max={600} step={10} fmt={(v) => `${v} ms`} /></Row>
-        <Row title="Start short" sub="Open with the first senses only; press d or More for the full entry"><Switch on={s.compact} onChange={(v) => set({ compact: v })} /></Row>
+        <Row title="On hover" sub="A peek (word, pinyin, two senses) or the whole card"><Seg value={s.hoverCard} onChange={(v) => set({ hoverCard: v })} options={[['peek', 'Peek'], ['full', 'Full card']]} /></Row>
+        <Row title="Expand key" sub={`Hold it to grow a peek into the full card; release to shrink back. Can't be the lookup trigger key${s.trigger !== 'hover' ? ` (${s.trigger === 'alt' ? 'Alt' : s.trigger === 'ctrl' ? 'Ctrl' : 'Shift'})` : ''}.`}><Seg value={s.expandKey} onChange={(v) => set({ expandKey: v })} options={[['shift', 'Shift'], ['alt', 'Alt'], ['ctrl', 'Ctrl']].filter(([k]) => k !== s.trigger)} /></Row>
         <Row title="HSK level" sub="Show the HSK 3.0 level badge when a word is on the lists"><Switch on={s.showHsk} onChange={(v) => set({ showHsk: v })} /></Row>
         <Row title="Keyboard hints" sub="The strip of shortcuts at the bottom of the popup (? toggles it too)"><Switch on={s.showHints} onChange={(v) => set({ showHints: v })} /></Row>
         <Row title="Speech rate"><Range k="ttsRate" min={0.5} max={1.5} step={0.05} fmt={(v) => `${v.toFixed(2)}×`} /></Row>

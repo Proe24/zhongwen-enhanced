@@ -220,6 +220,22 @@ marked **(changed)**.
   exists. Users who read on shortcut-heavy sites can switch to a hold-a-key
   trigger, where no popup exists until they ask for one.
 
+### S13 — Peek and hold-to-expand (after the first release build)
+
+- *Why change the default?* The full card is ~600px tall; while scanning a
+  paragraph it covered the next two lines. Yiju's split is better: a glance
+  costs nothing, detail is one deliberate gesture away.
+- *What is in a peek?* Word, pinyin, the other script, HSK, the first two
+  senses, a count of further readings, the chips for shorter matches, and a
+  one-line hint. No buttons: every key still works on the peeked word.
+- *How does expanding interact with the hold-to-look-up trigger?* Both are
+  held modifiers, so they must differ; `normalizeSettings` enforces it and the
+  Settings UI hides the trigger key from the expand-key choices. Letters typed
+  while holding our expand key are ours (Shift+S saves); any other modifier
+  combination still belongs to the page.
+- *What stays expanded?* Settings = full, the key held, pinned, drilled into a
+  character, or `d` pressed (which replaced the old short/full toggle).
+
 ## Known limits
 
 - No lookups inside `<input>`/`<textarea>` (1.x had this; dropped for now).

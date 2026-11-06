@@ -92,11 +92,22 @@ const shot = async (pg, name, opts = {}) => { await pg.waitForTimeout(350); awai
 const clipAround = async (sel = '.zw-popup', pad = 24) => page.evaluate(({ sel, pad }) => { const el = document.querySelector('zhongwen-enhanced').shadowRoot.querySelector(sel); const r = el.getBoundingClientRect(); return { x: Math.max(0, r.left - pad - 120), y: Math.max(0, r.top - pad - 60), width: Math.min(innerWidth, r.width + 2 * pad + 240), height: Math.min(innerHeight, r.height + 2 * pad + 60) }; }, { sel, pad });
 const shadowClick = (sel, n = 0) => page.evaluate(({ sel, n }) => document.querySelector('zhongwen-enhanced').shadowRoot.querySelectorAll(sel)[n].click(), { sel, n });
 
-// 1. hover popup, light
+// 0. the peek (the default on hover)
 await page.goto(URL0);
 await page.waitForTimeout(300);
+await hoverChar('p1', P1.indexOf('利用'));
+await page.waitForFunction(() => { const h = document.querySelector('zhongwen-enhanced'); return h && h.shadowRoot.querySelector('.zw-popup.zw-peek'); }, null, { timeout: 5000 });
+await shot(page, 'popup-peek.png', { clip: await clipAround('.zw-popup', 24) });
+
+// 1. the full card, light (Shift held)
+await page.mouse.move(600, 720);
+await page.waitForTimeout(300);
 await hoverChar('p1', P1.indexOf('茶树')); // 茶树
+await page.waitForFunction(() => { const h = document.querySelector('zhongwen-enhanced'); return h && h.shadowRoot.querySelector('.zw-popup'); }, null, { timeout: 5000 });
+await page.keyboard.down('Shift');
 await popupShown();
+await page.keyboard.up('Shift');
+await page.keyboard.press('d'); // keep the full card
 await page.keyboard.press('Space'); // pin so the mouse can leave
 await shot(page, 'popup-light.png');
 
@@ -107,7 +118,10 @@ await page.waitForTimeout(200);
 await hoverChar('p1', 33); // 《茶经》… find 专著: index of 专
 const idx = P1.indexOf('专');
 await hoverChar('p1', idx);
+await page.keyboard.down('Shift');
 await popupShown();
+await page.keyboard.up('Shift');
+await page.keyboard.press('d');
 await shadowClick('.zw-char-row', 1); // 著
 await page.waitForFunction(() => /著/.test(document.querySelector('zhongwen-enhanced').shadowRoot.querySelector('.zw-hero-word').textContent), null, { timeout: 5000 });
 await shot(page, 'popup-drill.png', { clip: await clipAround() });
@@ -117,7 +131,7 @@ await page.keyboard.press('Escape');
 await page.mouse.move(600, 720);
 await page.waitForTimeout(200);
 await hoverChar('p2', P2.indexOf('习惯'));
-await popupShown();
+await page.waitForFunction(() => { const h = document.querySelector('zhongwen-enhanced'); return h && h.shadowRoot.querySelector('.zw-popup'); }, null, { timeout: 5000 });
 await page.keyboard.press('t');
 await page.waitForFunction(() => document.querySelector('zhongwen-enhanced').shadowRoot.querySelectorAll('.zw-tok').length > 5, null, { timeout: 5000 });
 await shadowClick('.zw-tok', 8);
@@ -131,8 +145,9 @@ dark = true;
 await page.goto(URL0);
 await page.waitForTimeout(400);
 await hoverChar('p3', P3.indexOf('乌龙茶'));
-await popupShown();
+await page.waitForFunction(() => { const h = document.querySelector('zhongwen-enhanced'); return h && h.shadowRoot.querySelector('.zw-popup'); }, null, { timeout: 5000 });
 await page.keyboard.press('Space');
+await popupShown();
 await shot(page, 'popup-dark.png');
 await page.keyboard.press('Escape');
 await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => chrome.storage.local.set({ settings: { ...(r.settings || {}), theme: 'light', tonePalette: 'warm' } })));

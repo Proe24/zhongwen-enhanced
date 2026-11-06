@@ -7,10 +7,18 @@ sample article with a seeded vocabulary.
 ## Hover to read
 
 Rest the pointer on any Chinese word. The longest dictionary match is
-highlighted in the page and a card opens beside it: the word with each
-character colored by tone, pinyin, the traditional form, its HSK 3.0 level,
-every sense, and a tappable breakdown of its characters. The shorter words
-that start at the same spot are one click (or `j` / `k`) away as chips.
+highlighted in the page and a **peek** opens beside it: the word with each
+character colored by tone, pinyin, the traditional form, its HSK 3.0 level
+and the first senses. The shorter words that start at the same spot are one
+click (or `j` / `k`) away as chips. A glance costs nothing; it never covers
+more than a line or two.
+
+![Peek](screenshots/popup-peek.png)
+
+Hold `Shift` (or the key you choose) and the peek grows into the **full
+card**: every reading and sense, a tappable breakdown of the characters,
+Save / Listen / Copy / Sentence, and links out. Release to shrink back, press
+`d` to keep it, or `space` to pin it so you can click inside.
 
 ![Hover popup, light theme](screenshots/popup-light.png)
 
@@ -28,7 +36,7 @@ you can click inside it.
 Every card has `Save`, `Listen`, `Copy` and `Sentence`, plus links to MDBG,
 Wiktionary, Forvo and the Chinese Grammar Wiki. The strip at the bottom
 lists the keys: `n` next word · `b` back · `m` next character · `s` save ·
-`a` listen · `c` copy · `t` sentence · `d` short/full · `esc` close.
+`a` listen · `c` copy · `t` sentence · `d` keep the full card · `esc` close.
 
 ## Sentences, word by word
 
@@ -89,8 +97,9 @@ and a streak.
 ## Settings
 
 Theme, tone palette, pinyin style (marks, numbers, zhuyin), which script
-leads, popup size, hover vs hold-a-key trigger, hover delay, per-site off
-list, review limits, exports, backup and restore. Changes apply immediately,
+leads, popup size, peek or full card on hover and the key that expands it,
+hover vs hold-a-key trigger, hover delay, per-site off list, review limits,
+exports, backup and restore. Changes apply immediately,
 with a live preview card.
 
 ![Settings](screenshots/settings.png)

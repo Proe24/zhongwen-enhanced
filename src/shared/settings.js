@@ -12,7 +12,8 @@ export const DEFAULTS = {
   trigger: 'hover', // 'hover' | 'alt' | 'ctrl' | 'shift' — hold a key to look up
   showHsk: true,
   showHints: true, // keyboard hint strip in the popup
-  compact: false, // start popups in the short view (first sense only, no readings)
+  hoverCard: 'peek', // 'peek' (word · pinyin · two senses) | 'full' (the whole card) on hover
+  expandKey: 'shift', // hold this key to expand a peek into the full card: 'shift' | 'alt' | 'ctrl'
   disabledSites: [], // hostnames where lookups stay off
   reviewNewPerDay: 20,
   reviewPerDay: 200,
@@ -27,6 +28,8 @@ const ENUMS = {
   pinyinStyle: ['marks', 'numbers', 'zhuyin'],
   script: ['page', 'simp', 'trad'],
   trigger: ['hover', 'alt', 'ctrl', 'shift'],
+  hoverCard: ['peek', 'full'],
+  expandKey: ['shift', 'alt', 'ctrl'],
 };
 const NUM = { popupScale: [0.75, 1.6], hoverDelay: [0, 1000], reviewNewPerDay: [0, 999], reviewPerDay: [0, 9999], ttsRate: [0.5, 1.5] };
 
@@ -41,6 +44,8 @@ export function normalizeSettings(raw) {
     else if (typeof DEFAULTS[k] === 'boolean') s[k] = !!v;
     else if (Array.isArray(DEFAULTS[k])) s[k] = Array.isArray(v) ? v.filter((x) => typeof x === 'string') : DEFAULTS[k];
   }
+  // the key that expands a peek can't be the key that triggers a lookup
+  if (s.expandKey === s.trigger) s.expandKey = s.trigger === 'shift' ? 'alt' : 'shift';
   return s;
 }
 

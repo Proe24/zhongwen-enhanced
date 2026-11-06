@@ -1,8 +1,11 @@
 // engine.js — the hover/keyboard state machine behind the popup.
 //
 //   mousemove ─(delay)─▶ caretAt ─▶ stream/idx ─▶ lookup ─▶ show
-//   keys: n/b/m move · s save · a listen · c copy · t sentence · d short/full
+//   keys: n/b/m move · s save · a listen · c copy · t sentence · d lock the full card
 //         j/k pick a shorter/longer match · space pin · esc close
+//   A hover shows a PEEK (word · pinyin · two senses) unless settings say full;
+//   holding the expand key (Shift by default) grows it into the full card and
+//   releasing shrinks it back. Pinning, drilling or `d` lock the full card.
 //
 // One `cur` object holds everything about the word on screen; `cfg` holds the
 // live settings. Nothing here touches storage directly — the service worker does.
@@ -29,6 +32,7 @@ let countTimer = null;
 let toastTimer = null;
 let lookupSeq = 0;
 let toast = null;
+let expandHeld = false; // the expand key is currently down
 const mouse = { x: -1, y: -1 };
 let vars = '';
 
@@ -40,7 +44,7 @@ export function configure(patch) {
   if (active() && !attached) attach();
   if (!active() && attached) detach();
   if (attached) ensureHighlightStyle(document, cfg.scheme); // only touch the page while lookups are on
-  if (cur) { cur.compact = cur.userCompact != null ? cur.userCompact : cfg.settings.compact; rerender(); }
+  if (cur) rerender();
   if (cfg.settings) updateSentencePanel({ vars, settings: cfg.settings });
 }
 
@@ -134,7 +138,7 @@ function lookupFrom(block, stream, idx, opts) {
     if (!res || !res.matches || !res.matches.length) return opts.keep ? null : scheduleHide();
     clearTimeout(hideTimer);
     const pinned = opts.pinned != null ? opts.pinned : !!(cur && cur.pinned);
-    cur = { block, stream, streamAt: Date.now(), idx, text, matches: res.matches, sel: 0, pinned, drill: [], compact: cur && cur.userCompact != null ? cur.userCompact : cfg.settings.compact, userCompact: cur ? cur.userCompact : null, navigated: !!opts.navigated, busy: false };
+    cur = { block, stream, streamAt: Date.now(), idx, text, matches: res.matches, sel: 0, pinned, drill: [], lockFull: !!(cur && cur.lockFull), navigated: !!opts.navigated, busy: false };
     message = null;
     show();
   }).catch(() => { clearTimeout(slow); if (seq === lookupSeq) showMessage('Dictionary unavailable — try reloading the extension.'); });
@@ -166,9 +170,13 @@ function scrollWordIntoView() {
   }
 }
 
+// the full card shows when settings say so, while the expand key is held, or
+// once the card is pinned / drilled / locked with `d`
+const expanded = () => !!cur && (cfg.settings.hoverCard === 'full' || expandHeld || cur.pinned || cur.lockFull || cur.drill.length > 0);
+
 function rerender() {
   if (!cur && !message) return;
-  renderInto(Popup({ cur, settings: cfg.settings, vars, toast, message, actions }));
+  renderInto(Popup({ cur, settings: cfg.settings, vars, toast, message, actions, expanded: expanded() }));
   place();
 }
 
@@ -238,7 +246,7 @@ function onScroll() {
     place();
   });
 }
-function onBlur() { if (cur && !cur.pinned) hide(); }
+function onBlur() { expandHeld = false; if (cur && !cur.pinned) hide(); }
 
 function pointInWord(x, y) {
   if (!cur || !cur.range) return false;
@@ -273,7 +281,16 @@ const MOD_KEYS = { alt: 'Alt', ctrl: 'Control', shift: 'Shift' };
 function onKey(e) {
   const trig = cfg.settings.trigger;
   if (trig !== 'hover' && e.key === MOD_KEYS[trig] && !cur && mouse.x >= 0) { lookupAt(mouse.x, mouse.y); return; }
-  if (typing(e) || e.altKey || e.ctrlKey || e.metaKey) return;
+  const ek = cfg.settings.expandKey;
+  if (e.key === MOD_KEYS[ek]) {
+    // holding the expand key: grow a peek into the full card (nothing is swallowed)
+    if (!expandHeld) { expandHeld = true; if (cur) rerender(); }
+    return;
+  }
+  if (typing(e)) return;
+  // letters pressed while holding OUR expand key are ours; any other modifier belongs to the page
+  const ours = (m) => cur && ek === m;
+  if ((e.altKey && !ours('alt')) || (e.ctrlKey && !ours('ctrl')) || e.metaKey) return;
   if (!cur) {
     // `t` with text selected on the page and no popup: break the selection down
     if (e.key.toLowerCase() === 't' && !sentencePanelOpen()) {
@@ -282,7 +299,7 @@ function onKey(e) {
     }
     return;
   }
-  if (e.shiftKey && e.key !== '?') return; // Shift+N, Shift+Space… belong to the page
+  if (e.shiftKey && e.key !== '?' && !ours('shift')) return; // Shift+N, Shift+Space… belong to the page
   const k = e.key === ' ' ? 'space' : e.key.toLowerCase();
   const fn = KEYS[k];
   if (!fn) return;
@@ -292,6 +309,7 @@ function onKey(e) {
 }
 function onKeyUp(e) {
   const trig = cfg.settings.trigger;
+  if (e.key === MOD_KEYS[cfg.settings.expandKey] && expandHeld) { expandHeld = false; if (cur) rerender(); }
   if (trig !== 'hover' && e.key === MOD_KEYS[trig] && cur && !cur.pinned) hide();
 }
 
@@ -304,7 +322,7 @@ const KEYS = {
   a: () => actions.speak(),
   c: () => actions.copy(),
   t: () => actions.sentence(),
-  d: () => actions.compact(),
+  d: () => actions.lockFull(),
   space: () => { cur.pinned = !cur.pinned; rerender(); },
   j: () => actions.select(Math.min(cur.matches.length - 1, cur.sel + 1)),
   k: () => actions.select(Math.max(0, cur.sel - 1)),
@@ -381,7 +399,7 @@ export const actions = {
     const sel = String(window.getSelection && window.getSelection()).trim();
     openSentence(sel && /\p{Script=Han}/u.test(sel) ? sel : T.sentenceAround(cur.stream, cur.idx, cur.matches[cur.sel].len, 300));
   },
-  compact() { if (!cur) return; cur.compact = !cur.compact; cur.userCompact = cur.compact; rerender(); },
+  lockFull() { if (!cur) return; cur.lockFull = !cur.lockFull; rerender(); },
 };
 
 export const isShowing = () => !!cur;

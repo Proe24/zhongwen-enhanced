@@ -6,6 +6,9 @@ A ground-up rewrite. Nothing from 1.x is reused; the 1.x word list is imported
 automatically.
 
 ### Reading
+- A hover shows a peek (word, pinyin, other script, HSK, first senses); holding
+  Shift grows it into the full card, `d` keeps it, `space` pins it. Settings
+  choose peek or full card on hover and the expand key.
 - Hover popup rebuilt in a shadow root: the page's CSS can't touch it and it
   can't touch the page. The hovered word is highlighted with the CSS Highlight
   API instead of the selection.

@@ -9,8 +9,8 @@ export function Help({ st, route }) {
       {!st.enabled && <div class="banner">Lookups are off. Turn them on from the toolbar icon or with Alt+Z.</div>}
 
       <h2>Reading a page</h2>
-      <p>Turn lookups on (toolbar icon, or <kbd>Alt</kbd>+<kbd>Z</kbd>). Rest the pointer on any Chinese word: a card shows the word, tone-colored pinyin, its meanings, the other script, its HSK level and each of its characters. The longest dictionary word is picked; the shorter words that start at the same place are offered as chips.</p>
-      <p>Click the word (or press <kbd>space</kbd>) to <b>pin</b> the card so you can click inside it. Pressing <kbd>s</kbd> saves the word <i>with the sentence it was in</i>, for review and export.</p>
+      <p>Turn lookups on (toolbar icon, or <kbd>Alt</kbd>+<kbd>Z</kbd>). Rest the pointer on any Chinese word: a <b>peek</b> shows the word, tone-colored pinyin, the other script, its HSK level and its first senses. The longest dictionary word is picked; the shorter words that start at the same place are offered as chips.</p>
+      <p>Hold <kbd>Shift</kbd> (or the key you choose in Settings) to grow the peek into the <b>full card</b>: every reading and sense, each character to drill into, Save / Listen / Copy / Sentence and links out. Release to shrink back, or press <kbd>d</kbd> to keep it. Click the word (or press <kbd>space</kbd>) to <b>pin</b> the card so you can click inside it. Pressing <kbd>s</kbd> saves the word <i>with the sentence it was in</i>, for review and export.</p>
 
       <h2>Shortcuts while a card is open</h2>
       <table>
@@ -18,7 +18,8 @@ export function Help({ st, route }) {
         <tr><td><kbd>b</kbd></td><td>back one character</td><td><kbd>a</kbd></td><td>listen</td></tr>
         <tr><td><kbd>m</kbd></td><td>next character</td><td><kbd>c</kbd></td><td>copy word · pinyin · meaning</td></tr>
         <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>shorter / longer match</td><td><kbd>t</kbd></td><td>break down the sentence</td></tr>
-        <tr><td><kbd>space</kbd></td><td>pin / unpin</td><td><kbd>d</kbd></td><td>short / full entry</td></tr>
+        <tr><td><kbd>space</kbd></td><td>pin / unpin</td><td><kbd>d</kbd></td><td>keep the full card</td></tr>
+        <tr><td><kbd>Shift</kbd> (held)</td><td>peek → full card</td><td></td><td></td></tr>
         <tr><td><kbd>esc</kbd></td><td>close</td><td><kbd>?</kbd></td><td>show / hide these hints</td></tr>
       </table>
       <p>Browser-wide: <kbd>Alt</kbd>+<kbd>Z</kbd> toggles lookups, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> opens this Library. Change them at chrome://extensions/shortcuts.</p>

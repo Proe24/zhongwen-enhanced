@@ -56,7 +56,7 @@ try {
     const el = host && host.shadowRoot.querySelector('.zw-popup');
     if (!el) return null;
     const txt = (s) => { const n = el.querySelector(s); return n ? n.textContent.trim() : null; };
-    return { word: txt('.zw-hero-word'), py: txt('.zw-hero-py'), sense: txt('.zw-senses li'), chips: [...el.querySelectorAll('.zw-chip')].map((c) => c.textContent.trim()), saved: txt('.zw-btn-primary, .zw-btn-on'), pinned: !!el.querySelector('.zw-pin'), rect: el.getBoundingClientRect().toJSON(), chars: el.querySelectorAll('.zw-char-row').length, toast: txt('.zw-toast') };
+    return { peek: el.classList.contains('zw-peek'), word: txt('.zw-hero-word') || txt('.zw-peek-word'), py: txt('.zw-hero-py') || txt('.zw-peek-py'), sense: txt('.zw-senses li'), chips: [...el.querySelectorAll('.zw-chip')].map((c) => c.textContent.trim()), saved: txt('.zw-btn-primary, .zw-btn-on'), pinned: !!el.querySelector('.zw-pin'), rect: el.getBoundingClientRect().toJSON(), chars: el.querySelectorAll('.zw-char-row').length, toast: txt('.zw-toast') };
   });
   const hoverChar = async (id, charIndex) => {
     const box = await page.evaluate(({ id, i }) => {
@@ -85,9 +85,30 @@ try {
   const badge = await sw.evaluate(() => chrome.action.getBadgeText({}));
   check(badge === 'ON' || badge === '', `badge text is "${badge}"`);
 
+  console.log('2b. a plain hover is a peek; holding Shift expands it; releasing shrinks it; d keeps it');
+  await hoverChar('p1', 2);
+  let p = await waitPopup();
+  check(p && p.peek && p.word === '中国人民银行' && p.chars === 0, `peek for ${p && p.word}, no character rows`);
+  check(p && p.rect.width < 340, `peek is narrow (${p && Math.round(p.rect.width)}px)`);
+  await page.keyboard.down('Shift');
+  p = await waitPopup((x) => x && !x.peek);
+  check(p && !p.peek && p.chars === 6, `full card while Shift is held (${p && p.chars} character rows)`);
+  await page.keyboard.up('Shift');
+  p = await waitPopup((x) => x && x.peek);
+  check(p && p.peek, 'back to a peek on release');
+  await page.keyboard.press('d');
+  p = await waitPopup((x) => x && !x.peek);
+  check(p && !p.peek, 'd keeps the full card');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => chrome.storage.local.set({ settings: { ...(r.settings || {}), hoverCard: 'full' } })));
+  await page.waitForTimeout(250);
+  await page.mouse.move(900, 700);
+  await page.waitForTimeout(200);
+
   console.log('3. hover 中 in 中国人民银行 → longest match first, pinyin, senses, chips, anchored below the word');
   const box = await hoverChar('p1', 2);
-  let p = await waitPopup();
+  p = await waitPopup();
   check(p && p.word === '中国人民银行', `word is ${p && p.word}`);
   check(p && /zhōng/i.test(p.py), `pinyin ${p && p.py}`);
   check(p && p.sense === "People's Bank of China", `sense "${p && p.sense}" (single sense, unnumbered)`);

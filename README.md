@@ -16,11 +16,12 @@ update.
 A tour with screenshots is in [docs/FEATURES.md](docs/FEATURES.md).
 
 - **Hover to read.** Rest the pointer on a word: the longest dictionary match
-  is highlighted in the page and a card shows the word with each character
-  colored by tone, pinyin (tone marks, numbers or zhuyin), every meaning and
-  reading, the other script (simplified ↔ traditional), its HSK 3.0 level, and
-  each of its characters. Shorter words that start at the same place are one
-  click (or `j`/`k`) away.
+  is highlighted in the page and a peek shows the word with each character
+  colored by tone, pinyin (tone marks, numbers or zhuyin), the other script
+  (simplified ↔ traditional), its HSK 3.0 level and its first senses. Hold
+  Shift for the full card: every meaning and reading, each character, actions
+  and links. Shorter words that start at the same place are one click (or
+  `j`/`k`) away.
 - **Keyboard reading.** `n` next word · `b` back · `m` next character, across
   paragraphs, scrolling as you go. `space` pins the card so you can click in it.
 - **Save with context.** `s` saves the word together with its sentence, the
@@ -67,7 +68,8 @@ Hover Chinese text. While a card is open:
 | `b` | back one character | `a` | listen |
 | `m` | next character | `c` | copy word · pinyin · meaning |
 | `j` `k` | shorter / longer match | `t` | break down the sentence |
-| `space` | pin / unpin | `d` | short / full entry |
+| `space` | pin / unpin | `d` | keep the full card |
+| `Shift` (held) | peek → full card | | |
 | `esc` | close | `?` | show / hide hints |
 
 **Alt+Shift+Z** opens the Library (vocabulary, review, sentences, dictionary,

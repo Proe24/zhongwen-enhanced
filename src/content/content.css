@@ -57,3 +57,19 @@
 .zw-panel-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 14px; border-top: 1px solid var(--zw-border); background: var(--zw-surface); flex-shrink: 0; align-items: center; }
 .zw-panel-actions .zw-toast { bottom: 60px; }
 .zw-faint-text { font-size: 12.5px; color: var(--zw-text-faint); }
+
+/* peek: the glance shown on a plain hover */
+.zw-peek { width: 300px; }
+.zw-peek .zw-alts { padding: 8px 12px 0; }
+.zw-peek-card { padding: 10px 14px 10px; }
+.zw-peek-head { display: flex; align-items: flex-start; gap: 12px; }
+.zw-peek-word { font-size: 30px; line-height: 1.05; flex-shrink: 0; letter-spacing: 0.02em; }
+.zw-peek-word.zw-long { font-size: 22px; }
+.zw-peek-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
+.zw-peek-py { font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+.zw-peek-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.zw-peek-meta .zw-other { font-size: 15px; }
+.zw-peek-defs { margin-top: 7px; font-size: 13.5px; line-height: 1.4; color: var(--zw-text); }
+.zw-peek-more { color: var(--zw-text-faint); font-size: 12px; }
+.zw-peek-hint { margin-top: 7px; font-size: 11px; color: var(--zw-text-faint); }
+.zw-peek .zw-toast { bottom: 10px; }

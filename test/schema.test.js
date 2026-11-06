@@ -41,6 +41,11 @@ describe('normalizeSettings', () => {
     expect(s.disabledSites).toEqual(['a.com']);
     expect(s.extra).toBeUndefined();
   });
+  it('keeps the expand key distinct from the trigger key', () => {
+    expect(normalizeSettings({ trigger: 'shift', expandKey: 'shift' }).expandKey).toBe('alt');
+    expect(normalizeSettings({ trigger: 'alt', expandKey: 'alt' }).expandKey).toBe('shift');
+    expect(normalizeSettings({ trigger: 'hover', expandKey: 'ctrl' }).expandKey).toBe('ctrl');
+  });
   it('returns defaults for nothing', () => {
     expect(normalizeSettings(null)).toEqual(DEFAULTS);
   });
