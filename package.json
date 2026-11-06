@@ -13,6 +13,7 @@
     "test": "vitest run",
     "e2e": "node e2e/run.mjs",
     "shots": "node e2e/screenshots.mjs",
+    "store-assets": "node e2e/store-assets.mjs",
     "dict": "node data/build-dict.mjs",
     "hsk": "node data/build-hsk.mjs",
     "icons": "node scripts/icons.mjs"

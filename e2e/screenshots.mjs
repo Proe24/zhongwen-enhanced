@@ -13,7 +13,8 @@ const require = createRequire(import.meta.url);
 const pw = (() => { for (const p of [process.env.PLAYWRIGHT_MODULE, 'playwright', '/opt/node-tools/node_modules/playwright'].filter(Boolean)) { try { return require(p); } catch {} } throw new Error('playwright not found'); })();
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const EXT = resolve(ROOT, 'dist');
-const OUT = resolve(ROOT, 'docs/screenshots');
+const OUT = process.env.SHOT_OUT ? resolve(process.env.SHOT_OUT) : resolve(ROOT, 'docs/screenshots');
+const W = Number(process.env.SHOT_W || 1100); const H = Number(process.env.SHOT_H || 760); const DPR = Number(process.env.SHOT_DPR || 2);
 mkdirSync(OUT, { recursive: true });
 
 const TITLE = '茶文化简介';
@@ -34,7 +35,7 @@ const port = srv.address().port;
 const URL0 = `http://127.0.0.1:${port}/`;
 
 const ctx = await pw.chromium.launchPersistentContext('', {
-  channel: 'chromium', headless: true, viewport: { width: 1100, height: 760 }, deviceScaleFactor: 2,
+  channel: 'chromium', headless: true, viewport: { width: W, height: H }, deviceScaleFactor: DPR,
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 });
 let sw = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
@@ -88,7 +89,8 @@ const hoverChar = async (id, i) => {
   return box;
 };
 const popupShown = () => page.waitForFunction(() => { const h = document.querySelector('zhongwen-enhanced'); return h && h.shadowRoot.querySelector('.zw-popup .zw-card'); }, null, { timeout: 5000 });
-const shot = async (pg, name, opts = {}) => { await pg.waitForTimeout(350); await pg.screenshot({ path: resolve(OUT, name), ...opts }); console.log('  ' + name); };
+const shot = async (pg, name, opts = {}) => { await pg.waitForTimeout(350); if (process.env.SHOT_OUT) { if (pg === pop) return; delete opts.clip; } await pg.screenshot({ path: resolve(OUT, name), ...opts }); console.log('  ' + name); };
+let pop = null;
 const clipAround = async (sel = '.zw-popup', pad = 24) => page.evaluate(({ sel, pad }) => { const el = document.querySelector('zhongwen-enhanced').shadowRoot.querySelector(sel); const r = el.getBoundingClientRect(); return { x: Math.max(0, r.left - pad - 120), y: Math.max(0, r.top - pad - 60), width: Math.min(innerWidth, r.width + 2 * pad + 240), height: Math.min(innerHeight, r.height + 2 * pad + 60) }; }, { sel, pad });
 const shadowClick = (sel, n = 0) => page.evaluate(({ sel, n }) => document.querySelector('zhongwen-enhanced').shadowRoot.querySelectorAll(sel)[n].click(), { sel, n });
 
@@ -154,7 +156,7 @@ await sw.evaluate(() => chrome.storage.local.get('settings').then((r) => chrome.
 dark = false;
 
 // 5. toolbar popup
-const pop = await ctx.newPage();
+pop = await ctx.newPage();
 await pop.setViewportSize({ width: 320, height: 520 });
 await pop.goto(`chrome-extension://${extId}/popup/index.html`);
 await pop.waitForSelector('.pop-stats');
@@ -165,7 +167,7 @@ await pop.close();
 
 // 6–10. Library screens
 const app = await ctx.newPage();
-await app.setViewportSize({ width: 1100, height: 760 });
+await app.setViewportSize({ width: W, height: H });
 await app.goto(`chrome-extension://${extId}/app/index.html#/vocab`);
 await app.waitForSelector('.vrow');
 await app.click('.vrow >> nth=2');
@@ -194,7 +196,7 @@ await shot(app, 'stats.png');
 
 await app.goto(`chrome-extension://${extId}/app/index.html#/settings`);
 await app.waitForSelector('.preview .zw-card');
-await shot(app, 'settings.png', { clip: { x: 0, y: 0, width: 1100, height: 760 } });
+await shot(app, 'settings.png', { clip: { x: 0, y: 0, width: W, height: H } });
 
 await ctx.close();
 srv.close();

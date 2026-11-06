@@ -38,4 +38,29 @@ Nothing is sent anywhere. No account. Free software (GPL).
 - activeTab: the current tab's hostname for the "off on this site" switch.
 - Host access (content script on all sites): the popup dictionary must run on any page the user reads; it does nothing until turned on.
 
-**Screenshots (1280×800):** the popup on a news article; the sentence panel; the Library vocabulary; a review card; settings.
+**Assets:** `npm run store-assets` regenerates `store/`: eleven 1280×800 screenshots
+(opaque PNG) and `promo-small-440x280.png`. Suggested order in the listing:
+popup-peek, popup-light, sentence-panel, library-vocab, review (max five).
+
+**What's new (2.0.0):**
+Zhongwen Enhanced 2.0 is a complete rewrite. Hover shows a calm peek (word,
+tone-colored pinyin, HSK level, first senses); hold Shift for the full card
+with every reading, each character, and Save / Listen / Copy / Sentence.
+Saved words keep the sentence they came from. New Library with vocabulary
+grouped by source, FSRS spaced-repetition review, saved sentences,
+dictionary search by hanzi / pinyin / English, stats, backup and restore,
+Anki / Pleco / CSV export. Light and dark themes, four tone palettes, zhuyin.
+Fully offline: the AI features and their API keys are gone, and the extension
+no longer requests any network access. Your existing word list is imported
+automatically.
+
+**Single purpose:** a Chinese–English pop-up dictionary with vocabulary review.
+
+**Data use (privacy tab):** collects no user data; everything stays on the
+device; no remote code.
+
+**Notes for the reviewer:** The extension makes no network requests. The
+dictionary (CC-CEDICT) and HSK lists are bundled under `dict/`. Content
+scripts run on all pages because the dictionary must work wherever the user
+reads Chinese; they stay inert until the user turns lookups on. Source:
+https://github.com/Proe24/zhongwen-enhanced
